@@ -8,48 +8,8 @@ pub struct Vertex {
     pub normal: [f32; 4], // vec4f alignment
 }
 
-pub struct Geometry {
-    pub blas: wgpu::Blas,
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
-    pub desc: wgpu::BlasTriangleGeometrySizeDescriptor,
-}
-
-fn build_blas(
-    device: &wgpu::Device,
-    label: &str,
-    vertices: Vec<Vertex>,
-    indices: Vec<u32>,
-) -> Geometry {
-    let desc = wgpu::BlasTriangleGeometrySizeDescriptor {
-        vertex_format: wgpu::VertexFormat::Float32x3,
-        vertex_count: vertices.len() as u32,
-        index_format: Some(wgpu::IndexFormat::Uint32),
-        index_count: Some(indices.len() as u32),
-        flags: wgpu::AccelerationStructureGeometryFlags::OPAQUE,
-    };
-
-    let blas = device.create_blas(
-        &wgpu::CreateBlasDescriptor {
-            label: Some(label),
-            flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
-            update_mode: wgpu::AccelerationStructureUpdateMode::Build,
-        },
-        wgpu::BlasGeometrySizeDescriptors::Triangles {
-            descriptors: vec![desc.clone()],
-        },
-    );
-
-    Geometry {
-        blas,
-        vertices,
-        indices,
-        desc,
-    }
-}
-
-// --- ヘルパー関数: 平面(Quad)のBLASを作成 ---
-pub fn create_plane_blas(device: &wgpu::Device) -> Geometry {
+// --- ヘルパー関数: 平面(Quad)のメッシュを作成 ---
+pub fn create_plane() -> (Vec<Vertex>, Vec<u32>) {
     // 1x1 の平面 (XZ平面, 中心0,0)
     let vertices = vec![
         Vertex {
@@ -71,11 +31,11 @@ pub fn create_plane_blas(device: &wgpu::Device) -> Geometry {
     ];
     let indices: Vec<u32> = vec![0, 1, 2, 2, 1, 3]; // Triangle List
 
-    build_blas(device, "Quad BLAS", vertices, indices)
+    (vertices, indices)
 }
 
-// --- ヘルパー関数: 立方体(Cube)のBLASを作成 ---
-pub fn create_cube_blas(device: &wgpu::Device) -> Geometry {
+// --- ヘルパー関数: 立方体(Cube)のメッシュを作成 ---
+pub fn create_cube() -> (Vec<Vertex>, Vec<u32>) {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
     let mut v_idx = 0;
@@ -154,11 +114,11 @@ pub fn create_cube_blas(device: &wgpu::Device) -> Geometry {
         v_idx += 4;
     }
 
-    build_blas(device, "Cube BLAS", vertices, indices)
+    (vertices, indices)
 }
 
-// --- ヘルパー関数: 球体(Sphere)のBLASを作成 (Icosphere) ---
-pub fn create_sphere_blas(device: &wgpu::Device, subdivisions: u32) -> Geometry {
+// --- ヘルパー関数: 球体(Sphere)のメッシュを作成 (Icosphere) ---
+pub fn create_sphere(subdivisions: u32) -> (Vec<Vertex>, Vec<u32>) {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
 
@@ -235,7 +195,7 @@ pub fn create_sphere_blas(device: &wgpu::Device, subdivisions: u32) -> Geometry 
         indices.extend_from_slice(&tri);
     }
 
-    build_blas(device, "Ico Sphere BLAS", vertices, indices)
+    (vertices, indices)
 }
 
 fn get_midpoint(
