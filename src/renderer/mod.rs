@@ -1,6 +1,9 @@
+pub mod bind_groups;
+
 use crate::scene;
 use crate::wgpu_ctx::WgpuContext;
-use crate::wgpu_utils::*;
+use crate::utils::wgpu::*;
+use bind_groups::*;
 
 pub struct Renderer {
     pub compute_pipeline: wgpu::ComputePipeline,

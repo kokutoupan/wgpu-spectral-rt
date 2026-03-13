@@ -1,8 +1,6 @@
-use crate::geometry;
-use glam::{Mat4, Vec3};
+use crate::scene::geometry::Vertex;
+use glam::Mat4;
 use wgpu::util::DeviceExt;
-
-pub use crate::geometry::Vertex;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -30,10 +28,10 @@ pub struct SceneResources {
     _blases: Vec<wgpu::Blas>,
 }
 
-struct InstanceData {
-    mesh_id: u32,
-    mat_id: u32,
-    transform: Mat4,
+pub struct InstanceData {
+    pub mesh_id: u32,
+    pub mat_id: u32,
+    pub transform: Mat4,
 }
 
 pub struct SceneBuilder {
@@ -208,107 +206,4 @@ impl SceneBuilder {
             _blases: blases.into_iter().map(|b| b.0).collect(),
         }
     }
-}
-
-// 構築の呼び出し側 (コーネルボックス)
-pub fn create_cornell_box(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneResources {
-    let mut builder = SceneBuilder::new();
-
-    // マテリアルの登録 (戻り値がIDになる)
-    let mat_light = builder.add_material(MaterialUniform {
-        color: [0., 0., 0., 1.],
-        emission: [10., 10., 10., 1.],
-        extra: [3., 0., 0., 0.],
-    });
-    let mat_red = builder.add_material(MaterialUniform {
-        color: [0.65, 0.05, 0.05, 1.],
-        emission: [0., 0., 0., 1.],
-        extra: [0., 0., 0., 0.],
-    });
-    let mat_green = builder.add_material(MaterialUniform {
-        color: [0.12, 0.45, 0.15, 1.],
-        emission: [0., 0., 0., 1.],
-        extra: [0., 0., 0., 0.],
-    });
-    let mat_white = builder.add_material(MaterialUniform {
-        color: [0.73, 0.73, 0.73, 1.],
-        emission: [0., 0., 0., 1.],
-        extra: [0., 0., 0., 0.],
-    });
-    let mat_glass = builder.add_material(MaterialUniform {
-        color: [1., 1., 1., 1.],
-        emission: [0., 0., 0., 0.],
-        extra: [2., 0., 1.5, 0.],
-    });
-    let mat_metal = builder.add_material(MaterialUniform {
-        color: [0.8, 0.8, 0.8, 1.],
-        emission: [0., 0., 0., 1.],
-        extra: [1., 0.2, 0., 0.],
-    });
-
-    let (plane_v, plane_i) = geometry::create_plane();
-    let (cube_v, cube_i) = geometry::create_cube();
-    let (sphere_v, sphere_i) = geometry::create_sphere(3);
-
-    let mesh_plane = builder.add_mesh(&plane_v, &plane_i);
-    let mesh_cube = builder.add_mesh(&cube_v, &cube_i);
-    let mesh_sphere = builder.add_mesh(&sphere_v, &sphere_i);
-
-    // インスタンスの配置
-    builder.add_instance(
-        mesh_plane,
-        mat_white,
-        Mat4::from_translation(Vec3::new(0., -1., 0.)) * Mat4::from_scale(Vec3::splat(2.)),
-    ); // Floor
-    builder.add_instance(
-        mesh_plane,
-        mat_white,
-        Mat4::from_translation(Vec3::new(0., 1., 0.))
-            * Mat4::from_rotation_x(std::f32::consts::PI)
-            * Mat4::from_scale(Vec3::splat(2.)),
-    ); // Ceil
-    builder.add_instance(
-        mesh_plane,
-        mat_white,
-        Mat4::from_translation(Vec3::new(0., 0., -1.))
-            * Mat4::from_rotation_x(std::f32::consts::FRAC_PI_2)
-            * Mat4::from_scale(Vec3::splat(2.)),
-    ); // Back
-    builder.add_instance(
-        mesh_plane,
-        mat_red,
-        Mat4::from_translation(Vec3::new(-1., 0., 0.))
-            * Mat4::from_rotation_z(-std::f32::consts::FRAC_PI_2)
-            * Mat4::from_scale(Vec3::splat(2.)),
-    ); // Left
-    builder.add_instance(
-        mesh_plane,
-        mat_green,
-        Mat4::from_translation(Vec3::new(1., 0., 0.))
-            * Mat4::from_rotation_z(std::f32::consts::FRAC_PI_2)
-            * Mat4::from_scale(Vec3::splat(2.)),
-    ); // Right
-    builder.add_instance(
-        mesh_plane,
-        mat_light,
-        Mat4::from_translation(Vec3::new(0., 0.99, 0.))
-            * Mat4::from_rotation_x(std::f32::consts::PI)
-            * Mat4::from_scale(Vec3::splat(0.5)),
-    ); // Light
-
-    builder.add_instance(
-        mesh_cube,
-        mat_metal,
-        Mat4::from_translation(Vec3::new(-0.35, -0.4 + 0.002, -0.3))
-            * Mat4::from_rotation_y(0.4)
-            * Mat4::from_scale(Vec3::new(0.6, 1.2, 0.6)),
-    );
-    builder.add_instance(
-        mesh_sphere,
-        mat_glass,
-        Mat4::from_translation(Vec3::new(0.4, -0.65, 0.3)) * Mat4::from_scale(Vec3::splat(0.75)),
-    );
-
-    // 一気にビルドして返す
-    builder.build(device, queue)
 }

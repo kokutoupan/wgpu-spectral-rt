@@ -1,12 +1,12 @@
 use std::sync::Arc;
 use winit::window::Window;
 
-use crate::camera::CameraController;
+use crate::scene::CameraController;
 use crate::renderer::Renderer;
 use crate::scene;
 use crate::screenshot::ScreenshotTask;
 use crate::wgpu_ctx::WgpuContext;
-use crate::wgpu_utils::*;
+use crate::utils::wgpu::*;
 
 pub struct Engine {
     ctx: WgpuContext,

@@ -1,12 +1,10 @@
 mod app;
-mod camera;
 mod engine;
-mod geometry;
 mod renderer;
 mod scene;
 mod screenshot;
 mod wgpu_ctx;
-mod wgpu_utils;
+mod utils;
 
 use winit::event_loop::{ControlFlow, EventLoop};
 
