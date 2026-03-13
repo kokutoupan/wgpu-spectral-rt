@@ -3,7 +3,6 @@ enable wgpu_ray_query;
 // --- 定数オーバーライド ---
 // デフォルト値を設定 (Rust側から指定がなければこれが使われる)
 override MAX_DEPTH: u32 = 8u;
-override SPP: u32 = 2u;
 
 // --- 構造体定義 ---
 struct Camera {
@@ -58,18 +57,24 @@ fn rand() -> f32 {
     return f32(rng_seed) / 4294967295.0;
 }
 
-fn random_in_unit_sphere() -> vec3f {
-    for (var i = 0; i < 10; i++) {
-        let p = vec3f(rand(), rand(), rand()) * 2.0 - 1.0;
-        if length(p) < 1.0 {
-            return p;
-        }
-    }
-    return vec3f(0.0, 1.0, 0.0);
+const PI: f32 = 3.14159265359;
+
+// ランダムな単位ベクトル（表面上の点）を返す
+fn random_unit_vector() -> vec3f {
+    let u1 = rand(); // 0.0 ~ 1.0 の乱数
+    let u2 = rand(); // 0.0 ~ 1.0 の乱数
+
+    let z = 1.0 - 2.0 * u1;
+    let r = sqrt(max(0.0, 1.0 - z * z));
+    let phi = 2.0 * PI * u2;
+
+    return vec3f(r * cos(phi), r * sin(phi), z);
 }
 
-fn random_unit_vector() -> vec3f {
-    return normalize(random_in_unit_sphere());
+// もし「球の内部」の点が必要な場合（Lambertianの計算で使う場合など）はこれを使います
+fn random_in_unit_sphere() -> vec3f {
+    let r = pow(rand(), 0.3333333); // 半径方向は三乗根をとって一様に分布させる
+    return random_unit_vector() * r;
 }
 
 // --- Helper Functions ---
@@ -207,8 +212,18 @@ fn ray_color(r_in: Ray) -> vec3f {
         }
 
         // 吸収またはロシアンルーレットで打ち切り
-        if absorbed || dot(throughput, throughput) < 0.01 {
+        if absorbed {
             break;
+        }
+        if (i > 3) {
+            let p_survive = max(throughput.x, max(throughput.y, throughput.z));
+            
+            if (rand() > p_survive) {
+                break;
+            }
+            
+            // 生き残った場合は、エネルギーを確率で割って増幅する
+            throughput /= p_survive;
         }
 
         r.origin = hit_pos;
@@ -232,18 +247,16 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 
     var pixel_color_linear = vec3f(0.0);
 
-    for (var s = 0u; s < SPP; s++) {
-        let jitter = vec2f(rand(), rand());
-        let uv_jittered = (vec2f(id.xy) + jitter) / vec2f(size);
-        let ndc_jittered = vec2f(uv_jittered.x * 2.0 - 1.0, uv_jittered.y * 2.0 - 1.0);
+    let jitter = vec2f(rand(), rand());
+    let uv_jittered = (vec2f(id.xy) + jitter) / vec2f(size);
+    let ndc_jittered = vec2f(uv_jittered.x * 2.0 - 1.0, uv_jittered.y * 2.0 - 1.0);
 
-        let target_ndc_jittered = vec4f(ndc_jittered, 1.0, 1.0);
-        let target_world_jittered = view_inv * proj_inv * target_ndc_jittered;
-        let direction_jittered = normalize(target_world_jittered.xyz / target_world_jittered.w - origin);
+    let target_ndc_jittered = vec4f(ndc_jittered, 1.0, 1.0);
+    let target_world_jittered = view_inv * proj_inv * target_ndc_jittered;
+    let direction_jittered = normalize(target_world_jittered.xyz / target_world_jittered.w - origin);
 
-        let ray = Ray(origin, direction_jittered);
-        pixel_color_linear += ray_color(ray);
-    }
+    let ray = Ray(origin, direction_jittered);
+    pixel_color_linear += ray_color(ray);
 
     let idx = id.y * size.x + id.x;
     var current_acc = vec4f(0.0);
@@ -251,7 +264,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
         current_acc = accumulation[idx];
     }
 
-    let new_acc = current_acc + vec4f(pixel_color_linear, f32(SPP));
+    let new_acc = current_acc + vec4f(pixel_color_linear, 1.0);
     accumulation[idx] = new_acc;
 
     var final_color = new_acc.rgb / new_acc.w;

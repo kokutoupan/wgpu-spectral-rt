@@ -29,6 +29,8 @@ pub struct Engine {
 
     // デルタタイム計算用
     last_frame_time: std::time::Instant,
+    fps_timer: f32,
+    fps_frame_count: u32,
 }
 
 impl Engine {
@@ -82,6 +84,8 @@ impl Engine {
             screenshot_padded_bytes_per_row,
             screenshot_sender,
             last_frame_time: std::time::Instant::now(),
+            fps_timer: 0.0,
+            fps_frame_count: 0,
         }
     }
 
@@ -131,6 +135,20 @@ impl Engine {
         let now = std::time::Instant::now();
         let dt = now - self.last_frame_time;
         self.last_frame_time = now;
+
+        let dt_secs = dt.as_secs_f32();
+        self.fps_timer += dt_secs;
+        self.fps_frame_count += 1;
+
+        if self.fps_timer >= 0.5 {
+            let fps = self.fps_frame_count as f32 / self.fps_timer;
+            self.window.set_title(&format!(
+                "wgpu-spectral-rt | FPS: {:.1} | SPP: {} | Res: {}x{}",
+                fps, self.renderer.frame_count, self.ctx.config.width, self.ctx.config.height
+            ));
+            self.fps_timer = 0.0;
+            self.fps_frame_count = 0;
+        }
 
         if self.camera_controller.update_camera(dt) {
             self.renderer.frame_count = 0;

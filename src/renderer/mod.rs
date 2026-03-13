@@ -1,8 +1,8 @@
 pub mod bind_groups;
 
 use crate::scene;
-use crate::wgpu_ctx::WgpuContext;
 use crate::utils::wgpu::*;
+use crate::wgpu_ctx::WgpuContext;
 use bind_groups::*;
 
 pub struct Renderer {
@@ -43,7 +43,7 @@ impl Renderer {
         let storage_texture = create_storage_texture(&ctx.device, &ctx.config);
         let storage_view = storage_texture.create_view(&Default::default());
 
-        let constants = [("MAX_DEPTH", 8.0), ("SPP", 2.0)];
+        let constants = [("MAX_DEPTH", 8.0)];
 
         let compute_bgl = ctx
             .device
