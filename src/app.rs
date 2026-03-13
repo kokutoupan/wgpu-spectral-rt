@@ -7,9 +7,20 @@ use winit::{
     window::{Window, WindowId},
 };
 
-#[derive(Default)]
 pub struct App {
     engine: Option<Engine>,
+    target_width: u32,
+    target_height: u32,
+}
+
+impl App {
+    pub fn new(target_width: u32, target_height: u32) -> Self {
+        Self {
+            engine: None,
+            target_width,
+            target_height,
+        }
+    }
 }
 
 impl ApplicationHandler for App {
@@ -17,12 +28,19 @@ impl ApplicationHandler for App {
         if self.engine.is_none() {
             let window_attributes = Window::default_attributes()
                 .with_title("wgpu-spectral-rt")
-                .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 720.0));
+                .with_inner_size(winit::dpi::LogicalSize::new(
+                    self.target_width as f64,
+                    self.target_height as f64,
+                ));
 
             let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
 
             // wgpuの初期化は非同期なので、pollsterでブロックして待つ
-            self.engine = Some(pollster::block_on(Engine::new(window)));
+            self.engine = Some(pollster::block_on(Engine::new(
+                window,
+                self.target_width,
+                self.target_height,
+            )));
         }
     }
 

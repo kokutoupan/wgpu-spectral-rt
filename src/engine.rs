@@ -34,7 +34,11 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub async fn new(window: Arc<Window>) -> Self {
+    pub async fn new(
+        window: Arc<Window>,
+        target_width: u32,
+        target_height: u32,
+    ) -> Self {
         // スクリーンショット用スレッドの起動
         let (screenshot_sender, screenshot_receiver) = std::sync::mpsc::channel::<ScreenshotTask>();
         std::thread::spawn(move || {
@@ -50,8 +54,9 @@ impl Engine {
         // シーンとカメラの初期化
         let scene_resources = scene::create_cornell_box(&ctx.device, &ctx.queue);
         let camera_controller = CameraController::new();
+
         let camera_uniform =
-            camera_controller.build_uniform(ctx.config.width as f32 / ctx.config.height as f32, 0);
+            camera_controller.build_uniform(target_width as f32 / target_height as f32, 0);
 
         let camera_buffer = create_buffer_init(
             &ctx.device,
@@ -60,14 +65,14 @@ impl Engine {
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         );
 
-        let renderer = Renderer::new(&ctx, &scene_resources, &camera_buffer);
+        let renderer = Renderer::new(&ctx, &scene_resources, &camera_buffer, target_width, target_height);
 
-        // スクリーンショットバッファの準備
-        let screenshot_padded_bytes_per_row = get_padded_bytes_per_row(ctx.config.width);
+        // スクリーンショットバッファの準備 (レンダリングターゲットの解像度を使用)
+        let screenshot_padded_bytes_per_row = get_padded_bytes_per_row(target_width);
         let screenshot_buffer = create_buffer(
             &ctx.device,
             "Screenshot Buffer",
-            (screenshot_padded_bytes_per_row * ctx.config.height) as u64,
+            (screenshot_padded_bytes_per_row * target_height) as u64,
             wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         );
 
@@ -100,13 +105,7 @@ impl Engine {
             self.renderer
                 .resize(&self.ctx, &self.scene_resources, &self.camera_buffer);
 
-            self.screenshot_padded_bytes_per_row = get_padded_bytes_per_row(new_size.width);
-            self.screenshot_buffer = create_buffer(
-                &self.ctx.device,
-                "Screenshot Buffer",
-                (self.screenshot_padded_bytes_per_row * new_size.height) as u64,
-                wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            );
+            // スクリーンショットバッファは固定解像度なのでリサイズ不要
         }
     }
 
@@ -155,7 +154,7 @@ impl Engine {
         }
 
         let camera_uniform = self.camera_controller.build_uniform(
-            self.ctx.config.width as f32 / self.ctx.config.height as f32,
+            self.renderer.target_width as f32 / self.renderer.target_height as f32,
             self.renderer.frame_count,
         );
         self.ctx.queue.write_buffer(
@@ -178,7 +177,7 @@ impl Engine {
         self.renderer.render(&self.ctx, &view)?;
 
         if self.screenshot_requested {
-            self.save_screenshot(&output.texture);
+            self.save_screenshot();
             self.screenshot_requested = false;
         }
 
@@ -187,7 +186,7 @@ impl Engine {
         Ok(())
     }
 
-    fn save_screenshot(&self, src_texture: &wgpu::Texture) {
+    fn save_screenshot(&self) {
         let mut encoder = self
             .ctx
             .device
@@ -195,7 +194,7 @@ impl Engine {
 
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
-                texture: src_texture,
+                texture: &self.renderer.storage_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -205,12 +204,12 @@ impl Engine {
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(self.screenshot_padded_bytes_per_row),
-                    rows_per_image: Some(self.ctx.config.height),
+                    rows_per_image: Some(self.renderer.target_height),
                 },
             },
             wgpu::Extent3d {
-                width: self.ctx.config.width,
-                height: self.ctx.config.height,
+                width: self.renderer.target_width,
+                height: self.renderer.target_height,
                 depth_or_array_layers: 1,
             },
         );
@@ -233,9 +232,10 @@ impl Engine {
 
             let task = ScreenshotTask {
                 data,
-                width: self.ctx.config.width,
-                height: self.ctx.config.height,
+                width: self.renderer.target_width,
+                height: self.renderer.target_height,
                 padded_bytes_per_row: self.screenshot_padded_bytes_per_row,
+                spp: self.renderer.frame_count,
             };
             self.screenshot_sender.send(task).unwrap();
         }

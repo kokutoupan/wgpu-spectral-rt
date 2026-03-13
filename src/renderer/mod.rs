@@ -13,11 +13,15 @@ pub struct Renderer {
     pub blit_pipeline: wgpu::RenderPipeline,
     pub blit_bind_group: wgpu::BindGroup,
     pub blit_bind_group_layout: wgpu::BindGroupLayout,
+    pub blit_uniform_buffer: wgpu::Buffer,
 
     pub sampler: wgpu::Sampler,
     pub storage_texture: wgpu::Texture,
     pub accumulation_buffer: wgpu::Buffer,
     pub frame_count: u32,
+
+    pub target_width: u32,
+    pub target_height: u32,
 }
 
 impl Renderer {
@@ -25,6 +29,8 @@ impl Renderer {
         ctx: &WgpuContext,
         scene_resources: &scene::SceneResources,
         camera_buffer: &wgpu::Buffer,
+        target_width: u32,
+        target_height: u32,
     ) -> Self {
         let shader = ctx
             .device
@@ -36,11 +42,11 @@ impl Renderer {
         let accumulation_buffer = create_buffer(
             &ctx.device,
             "Accumulation Buffer",
-            (ctx.config.width * ctx.config.height * 16) as u64,
+            (target_width * target_height * 16) as u64,
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         );
 
-        let storage_texture = create_storage_texture(&ctx.device, &ctx.config);
+        let storage_texture = create_storage_texture(&ctx.device, target_width, target_height);
         let storage_view = storage_texture.create_view(&Default::default());
 
         let constants = [("MAX_DEPTH", 8.0)];
@@ -185,6 +191,16 @@ impl Renderer {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -212,7 +228,7 @@ impl Renderer {
                         targets: &[Some(wgpu::ColorTargetState {
                             format: ctx.config.format,
                             blend: None,
-                            write_mask: wgpu::ColorWrites::ALL,
+                            write_mask: wgpu::ColorWrites::ALL, // Don't clear outside the draw region
                         })],
                     }),
                     primitive: wgpu::PrimitiveState::default(),
@@ -222,8 +238,21 @@ impl Renderer {
                     cache: None,
                 });
 
-        let blit_bind_group =
-            create_blit_bind_group(&ctx.device, &blit_bgl, &storage_view, &sampler);
+        // Initialize blit uniform empty (will be overwritten on first frame)
+        let blit_uniform_buffer = create_buffer_init(
+            &ctx.device,
+            "Blit Uniform Buffer",
+            &[0.0f32, 0.0, 0.0, 0.0],
+            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        );
+
+        let blit_bind_group = create_blit_bind_group(
+            &ctx.device,
+            &blit_bgl,
+            &storage_view,
+            &sampler,
+            &blit_uniform_buffer,
+        );
 
         Self {
             compute_pipeline,
@@ -232,10 +261,13 @@ impl Renderer {
             blit_pipeline,
             blit_bind_group,
             blit_bind_group_layout: blit_bgl,
+            blit_uniform_buffer,
             sampler,
             storage_texture,
             accumulation_buffer,
             frame_count: 0,
+            target_width,
+            target_height,
         }
     }
 
@@ -245,33 +277,45 @@ impl Renderer {
         scene_resources: &scene::SceneResources,
         camera_buffer: &wgpu::Buffer,
     ) {
-        self.accumulation_buffer = create_buffer(
-            &ctx.device,
-            "Accumulation Buffer",
-            (ctx.config.width * ctx.config.height * 16) as u64,
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        // Compute resources remain fixed size, no need to recreate them on resize
+        // Blit pass will handle rendering the fixed size texture to the new window size
+
+        let target_aspect = self.target_width as f32 / self.target_height as f32;
+        let window_aspect = ctx.config.width as f32 / ctx.config.height as f32;
+
+        let mut scale_x = 1.0;
+        let mut scale_y = 1.0;
+
+        if window_aspect > target_aspect {
+            // Window is wider than target. Scale X to fit height.
+            scale_x = target_aspect / window_aspect;
+        } else {
+            // Window is taller than target. Scale Y to fit width.
+            scale_y = window_aspect / target_aspect;
+        }
+
+        let offset_x = 0.0;
+        let offset_y = 0.0;
+
+        let scale_offset = [scale_x, scale_y, offset_x, offset_y];
+
+        ctx.queue.write_buffer(
+            &self.blit_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&scale_offset),
         );
 
-        self.storage_texture = create_storage_texture(&ctx.device, &ctx.config);
         let storage_view = self.storage_texture.create_view(&Default::default());
-
-        self.compute_bind_group = create_compute_bind_group(
-            &ctx.device,
-            &self.compute_bind_group_layout,
-            scene_resources,
-            &storage_view,
-            camera_buffer,
-            &self.accumulation_buffer,
-        );
 
         self.blit_bind_group = create_blit_bind_group(
             &ctx.device,
             &self.blit_bind_group_layout,
             &storage_view,
             &self.sampler,
+            &self.blit_uniform_buffer,
         );
 
-        self.frame_count = 0;
+        // Don't reset frame count on window resize, since the underlying render hasn't changed viewpoint
     }
 
     pub fn render(
@@ -291,7 +335,7 @@ impl Renderer {
             });
             cpass.set_pipeline(&self.compute_pipeline);
             cpass.set_bind_group(0, &self.compute_bind_group, &[]);
-            cpass.dispatch_workgroups((ctx.config.width + 7) / 8, (ctx.config.height + 7) / 8, 1);
+            cpass.dispatch_workgroups((self.target_width + 7) / 8, (self.target_height + 7) / 8, 1);
         }
 
         // 2. Render Pass (Blit)
@@ -302,7 +346,7 @@ impl Renderer {
                     view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
                         store: wgpu::StoreOp::Store,
                     },
                     depth_slice: None,
@@ -314,7 +358,7 @@ impl Renderer {
             });
             rpass.set_pipeline(&self.blit_pipeline);
             rpass.set_bind_group(0, &self.blit_bind_group, &[]);
-            rpass.draw(0..3, 0..1);
+            rpass.draw(0..6, 0..1);
         }
 
         ctx.queue.submit(std::iter::once(encoder.finish()));

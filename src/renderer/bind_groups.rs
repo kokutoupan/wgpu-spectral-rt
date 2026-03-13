@@ -53,6 +53,7 @@ pub fn create_blit_bind_group(
     layout: &wgpu::BindGroupLayout,
     storage_view: &wgpu::TextureView,
     sampler: &wgpu::Sampler,
+    uniform_buffer: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
@@ -65,6 +66,10 @@ pub fn create_blit_bind_group(
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: uniform_buffer.as_entire_binding(),
             },
         ],
     })

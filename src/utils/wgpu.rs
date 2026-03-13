@@ -29,20 +29,23 @@ pub fn create_buffer_init<T: bytemuck::Pod>(
 
 pub fn create_storage_texture(
     device: &wgpu::Device,
-    config: &wgpu::SurfaceConfiguration,
+    width: u32,
+    height: u32,
 ) -> wgpu::Texture {
     device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Storage Texture"),
         size: wgpu::Extent3d {
-            width: config.width,
-            height: config.height,
+            width,
+            height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+        usage: wgpu::TextureUsages::STORAGE_BINDING
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     })
 }
