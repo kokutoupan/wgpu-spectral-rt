@@ -1,12 +1,12 @@
 use std::sync::Arc;
 use winit::window::Window;
 
-use crate::scene::CameraController;
 use crate::renderer::Renderer;
 use crate::scene;
+use crate::scene::CameraController;
 use crate::screenshot::ScreenshotTask;
-use crate::wgpu_ctx::WgpuContext;
 use crate::utils::wgpu::*;
+use crate::wgpu_ctx::WgpuContext;
 
 pub struct Engine {
     ctx: WgpuContext,
@@ -34,11 +34,7 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub async fn new(
-        window: Arc<Window>,
-        target_width: u32,
-        target_height: u32,
-    ) -> Self {
+    pub async fn new(window: Arc<Window>, target_width: u32, target_height: u32) -> Self {
         // スクリーンショット用スレッドの起動
         let (screenshot_sender, screenshot_receiver) = std::sync::mpsc::channel::<ScreenshotTask>();
         std::thread::spawn(move || {
@@ -65,7 +61,13 @@ impl Engine {
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         );
 
-        let renderer = Renderer::new(&ctx, &scene_resources, &camera_buffer, target_width, target_height);
+        let renderer = Renderer::new(
+            &ctx,
+            &scene_resources,
+            &camera_buffer,
+            target_width,
+            target_height,
+        );
 
         // スクリーンショットバッファの準備 (レンダリングターゲットの解像度を使用)
         let screenshot_padded_bytes_per_row = get_padded_bytes_per_row(target_width);

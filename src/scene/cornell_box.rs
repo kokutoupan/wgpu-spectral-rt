@@ -33,7 +33,7 @@ pub fn create_cornell_box(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneRe
     let mat_metal = builder.add_material(MaterialUniform {
         color: [0.8, 0.8, 0.8, 1.],
         emission: [0., 0., 0., 1.],
-        extra: [1., 0.2, 0., 0.],
+        extra: [1., 0.1, 0., 0.],
     });
 
     let (plane_v, plane_i) = geometry::create_plane();
@@ -48,42 +48,42 @@ pub fn create_cornell_box(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneRe
         mesh_plane,
         mat_white,
         Mat4::from_translation(Vec3::new(0., -1., 0.)) * Mat4::from_scale(Vec3::splat(2.)),
-    ); 
+    );
     builder.add_instance(
         mesh_plane,
         mat_white,
         Mat4::from_translation(Vec3::new(0., 1., 0.))
             * Mat4::from_rotation_x(std::f32::consts::PI)
             * Mat4::from_scale(Vec3::splat(2.)),
-    ); 
+    );
     builder.add_instance(
         mesh_plane,
         mat_white,
         Mat4::from_translation(Vec3::new(0., 0., -1.))
             * Mat4::from_rotation_x(std::f32::consts::FRAC_PI_2)
             * Mat4::from_scale(Vec3::splat(2.)),
-    ); 
+    );
     builder.add_instance(
         mesh_plane,
         mat_red,
         Mat4::from_translation(Vec3::new(-1., 0., 0.))
             * Mat4::from_rotation_z(-std::f32::consts::FRAC_PI_2)
             * Mat4::from_scale(Vec3::splat(2.)),
-    ); 
+    );
     builder.add_instance(
         mesh_plane,
         mat_green,
         Mat4::from_translation(Vec3::new(1., 0., 0.))
             * Mat4::from_rotation_z(std::f32::consts::FRAC_PI_2)
             * Mat4::from_scale(Vec3::splat(2.)),
-    ); 
+    );
     builder.add_instance(
         mesh_plane,
         mat_light,
         Mat4::from_translation(Vec3::new(0., 0.99, 0.))
             * Mat4::from_rotation_x(std::f32::consts::PI)
             * Mat4::from_scale(Vec3::splat(0.5)),
-    ); 
+    );
 
     builder.add_instance(
         mesh_cube,
