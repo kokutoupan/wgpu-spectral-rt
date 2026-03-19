@@ -49,7 +49,7 @@ impl Renderer {
         let storage_texture = create_storage_texture(&ctx.device, target_width, target_height);
         let storage_view = storage_texture.create_view(&Default::default());
 
-        let constants = [("MAX_DEPTH", 8.0)];
+        let constants = [("MAX_DEPTH", 12.0)];
 
         let compute_bgl = ctx
             .device

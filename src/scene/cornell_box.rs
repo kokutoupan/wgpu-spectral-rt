@@ -28,17 +28,17 @@ pub fn create_cornell_box(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneRe
     let mat_glass = builder.add_material(MaterialUniform {
         color: [1., 1., 1., 1.],
         emission: [0., 0., 0., 0.],
-        extra: [2., 0., 1.5, 0.],
+        extra: [2., 0., 1.5, 0.02],
     });
     let mat_metal = builder.add_material(MaterialUniform {
         color: [0.8, 0.8, 0.8, 1.],
         emission: [0., 0., 0., 1.],
-        extra: [1., 0.1, 0., 0.],
+        extra: [1., 0.0, 0., 0.],
     });
 
     let (plane_v, plane_i) = geometry::create_plane();
     let (cube_v, cube_i) = geometry::create_cube();
-    let (sphere_v, sphere_i) = geometry::create_sphere(3);
+    let (sphere_v, sphere_i) = geometry::create_sphere(4);
 
     let mesh_plane = builder.add_mesh(&plane_v, &plane_i);
     let mesh_cube = builder.add_mesh(&cube_v, &cube_i);

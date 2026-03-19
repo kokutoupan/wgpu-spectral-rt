@@ -7,7 +7,7 @@ use wgpu::util::DeviceExt;
 pub struct MaterialUniform {
     pub color: [f32; 4],
     pub emission: [f32; 4],
-    pub extra: [f32; 4], // x: type, y: fuzz, z: ior, w: padding
+    pub extra: [f32; 4], // x: type, y: fuzz, z: ior, w: cauchy_a
 }
 
 #[repr(C)]
