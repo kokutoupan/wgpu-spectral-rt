@@ -9,6 +9,8 @@ override MAX_DEPTH: u32 = 8u;
 struct Camera {
     view_inverse: array<vec4f, 4>,
     proj_inverse: array<vec4f, 4>,
+    view: mat4x4f,
+    proj: mat4x4f,
     frame_count: u32,
 }
 
@@ -32,7 +34,6 @@ struct LightInfo {
     v0: vec4f,
     v1: vec4f,
     v2: vec4f,
-    normal: vec4f,
     params: vec4f,
 }
 

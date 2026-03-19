@@ -6,6 +6,8 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 pub struct CameraUniform {
     pub view_inverse: [[f32; 4]; 4],
     pub proj_inverse: [[f32; 4]; 4],
+    pub view: [f32; 16],
+    pub proj: [f32; 16],
     pub frame_count: u32,
     pub _padding: [u32; 3], // 16バイトアライメントのためのパディング
 }
@@ -184,6 +186,8 @@ impl CameraController {
         CameraUniform {
             view_inverse: view.inverse().to_cols_array_2d(),
             proj_inverse: proj.inverse().to_cols_array_2d(),
+            view: view.to_cols_array(),
+            proj: proj.to_cols_array(),
             frame_count,
             _padding: [0; 3],
         }

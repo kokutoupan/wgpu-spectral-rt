@@ -1,6 +1,8 @@
 pub mod bind_groups;
 pub mod blit_pass;
 pub mod compute_pass;
+pub mod debug_photons_pass;
+pub mod photon_emit_pass;
 
 use crate::scene;
 use crate::utils::wgpu::*;
@@ -8,15 +10,24 @@ use crate::wgpu_ctx::WgpuContext;
 
 use blit_pass::BlitPass;
 use compute_pass::ComputePass;
+use debug_photons_pass::DebugPhotonsPass;
+use photon_emit_pass::PhotonEmitPass;
+
+pub const MAX_PHOTONS: u32 = 1024 * 1024;
 
 pub struct Renderer {
+    pub photon_emit_pass: PhotonEmitPass,
     pub compute_pass: ComputePass,
     pub blit_pass: BlitPass,
+    pub debug_photons_pass: DebugPhotonsPass,
 
     pub sampler: wgpu::Sampler,
     pub storage_texture: wgpu::Texture,
     pub accumulation_buffer: wgpu::Buffer,
     pub frame_count: u32,
+
+    pub photons_buffer: wgpu::Buffer,
+    pub photon_count_buffer: wgpu::Buffer,
 
     pub target_width: u32,
     pub target_height: u32,
@@ -30,6 +41,32 @@ impl Renderer {
         target_width: u32,
         target_height: u32,
     ) -> Self {
+        // --- フォトン用バッファの作成 ---
+        // Photon構造体は 64 bytes
+        let photons_buffer = create_buffer(
+            &ctx.device,
+            "Photons Buffer",
+            (MAX_PHOTONS as u64) * 64,
+            wgpu::BufferUsages::STORAGE,
+        );
+        // カウンター(u32 = 4 bytes)
+        let photon_count_buffer = create_buffer(
+            &ctx.device,
+            "Photon Count Buffer",
+            4,
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        );
+
+        // --- パスの初期化 ---
+        let photon_emit_pass = PhotonEmitPass::new(
+            ctx,
+            scene_resources,
+            &photons_buffer,
+            &photon_count_buffer,
+            camera_buffer,
+        );
+
+        // --- レイトレース用バッファの作成 ---
         let accumulation_buffer = create_buffer(
             &ctx.device,
             "Accumulation Buffer",
@@ -54,13 +91,19 @@ impl Renderer {
 
         let blit_pass = BlitPass::new(ctx, &storage_view, &sampler);
 
+        let debug_photons_pass = DebugPhotonsPass::new(ctx, &photons_buffer, camera_buffer);
+
         Self {
+            photon_emit_pass,
             compute_pass,
             blit_pass,
+            debug_photons_pass,
             sampler,
             storage_texture,
             accumulation_buffer,
             frame_count: 0,
+            photons_buffer,
+            photon_count_buffer,
             target_width,
             target_height,
         }
@@ -94,12 +137,23 @@ impl Renderer {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        // 1. Compute Pass
+        ctx.queue
+            .write_buffer(&self.photon_count_buffer, 0, bytemuck::cast_slice(&[0u32]));
+
+        // 1. Photon Emit Pass
+        self.photon_emit_pass.record(&mut encoder, MAX_PHOTONS);
+
+        // 2. Compute Pass
         self.compute_pass
             .record(&mut encoder, self.target_width, self.target_height);
 
         // 2. Render Pass (Blit)
-        self.blit_pass.record(&mut encoder, view);
+        // self.blit_pass.record(&mut encoder, view);
+
+        // 3. Debug Pass (Photons Overlay)
+        // Blitされた絵の上に、フォトンを重ねて描画する
+        self.debug_photons_pass
+            .record(&mut encoder, view, MAX_PHOTONS);
 
         ctx.queue.submit(std::iter::once(encoder.finish()));
         self.frame_count += 1;

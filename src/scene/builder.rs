@@ -16,7 +16,6 @@ pub struct LightInfo {
     pub v0: [f32; 4],
     pub v1: [f32; 4],
     pub v2: [f32; 4],
-    pub normal: [f32; 4],
     pub params: [f32; 4], // [0]:type, [1]:temp, [2]:intensity, [3]:pad
 }
 
@@ -120,16 +119,10 @@ impl SceneBuilder {
             let p1 = transform * Vec4::new(v1[0], v1[1], v1[2], 1.0);
             let p2 = transform * Vec4::new(v2[0], v2[1], v2[2], 1.0);
 
-            // 法線を計算
-            let edge1 = p1.truncate() - p0.truncate();
-            let edge2 = p2.truncate() - p0.truncate();
-            let normal = edge1.cross(edge2).normalize();
-
             self.lights.push(LightInfo {
                 v0: [p0.x, p0.y, p0.z, 1.0],
                 v1: [p1.x, p1.y, p1.z, 1.0],
                 v2: [p2.x, p2.y, p2.z, 1.0],
-                normal: [normal.x, normal.y, normal.z, 0.0],
                 params,
             });
         }
@@ -225,7 +218,6 @@ impl SceneBuilder {
                     v0: [0.; 4],
                     v1: [0.; 4],
                     v2: [0.; 4],
-                    normal: [0.; 4],
                     params: [0.; 4],
                 }]
             } else {
