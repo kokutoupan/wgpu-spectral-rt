@@ -38,8 +38,6 @@ impl ScreenshotSaver {
         let padded_bytes_per_row = padded_bytes_per_row as usize;
         let pixel_count = (width * height) as usize;
 
-        println!("Process Mode: Fast Blur (High Speed)");
-
         // 1. パディング除去 & BGRA->RGBA変換 & ガンマ補正 & u8生成 (一撃で行う)
         // self.image_dataを再利用 (rgba_data は削除して一本化)
         if self.image_data.len() != pixel_count * 4 {

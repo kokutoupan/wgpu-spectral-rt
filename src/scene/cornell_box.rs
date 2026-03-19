@@ -6,33 +6,27 @@ pub fn create_cornell_box(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneRe
     let mut builder = SceneBuilder::new();
 
     let mat_light = builder.add_material(MaterialUniform {
-        color: [0., 0., 0., 1.],
-        emission: [10., 10., 10., 1.],
+        color: [6500.0, 5.0, 0.0, 1.0],
         extra: [3., 0., 0., 0.],
     });
     let mat_red = builder.add_material(MaterialUniform {
         color: [0.65, 0.05, 0.05, 1.],
-        emission: [0., 0., 0., 1.],
         extra: [0., 0., 0., 0.],
     });
     let mat_green = builder.add_material(MaterialUniform {
         color: [0.12, 0.45, 0.15, 1.],
-        emission: [0., 0., 0., 1.],
         extra: [0., 0., 0., 0.],
     });
     let mat_white = builder.add_material(MaterialUniform {
         color: [0.73, 0.73, 0.73, 1.],
-        emission: [0., 0., 0., 1.],
         extra: [0., 0., 0., 0.],
     });
     let mat_glass = builder.add_material(MaterialUniform {
         color: [1., 1., 1., 1.],
-        emission: [0., 0., 0., 0.],
         extra: [2., 0., 1.5, 0.02],
     });
     let mat_metal = builder.add_material(MaterialUniform {
         color: [0.8, 0.8, 0.8, 1.],
-        emission: [0., 0., 0., 1.],
         extra: [1., 0.0, 0., 0.],
     });
 
@@ -77,12 +71,21 @@ pub fn create_cornell_box(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneRe
             * Mat4::from_rotation_z(std::f32::consts::FRAC_PI_2)
             * Mat4::from_scale(Vec3::splat(2.)),
     );
-    builder.add_instance(
+    // builder.add_instance(
+    //     mesh_plane,
+    //     mat_light,
+    //     Mat4::from_translation(Vec3::new(0., 0.99, 0.))
+    //         * Mat4::from_rotation_x(std::f32::consts::PI)
+    //         * Mat4::from_scale(Vec3::splat(0.5)),
+    // );
+
+    builder.add_light_instance(
         mesh_plane,
         mat_light,
         Mat4::from_translation(Vec3::new(0., 0.99, 0.))
             * Mat4::from_rotation_x(std::f32::consts::PI)
             * Mat4::from_scale(Vec3::splat(0.5)),
+        [0.0, 6500.0, 5.0, 0.0], // params: type=0, temp=6500, intensity=15
     );
 
     builder.add_instance(

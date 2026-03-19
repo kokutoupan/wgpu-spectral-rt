@@ -14,7 +14,6 @@ struct Camera {
 
 struct Material {
     color: vec4f,
-    emission: vec4f,
     extra: vec4f, 
 }
 
@@ -27,6 +26,14 @@ struct MeshInfo {
     vertex_offset: u32,
     index_offset: u32,
     pad: vec2u,
+}
+
+struct LightInfo {
+    v0: vec4f,
+    v1: vec4f,
+    v2: vec4f,
+    normal: vec4f,
+    params: vec4f,
 }
 
 struct Ray {
@@ -48,6 +55,7 @@ struct ScatterRecord {
 @group(0) @binding(5) var<storage, read> vertices: array<Vertex>;
 @group(0) @binding(6) var<storage, read> indices: array<u32>;
 @group(0) @binding(7) var<storage, read> mesh_infos: array<MeshInfo>;
+@group(0) @binding(8) var<storage, read> lights: array<LightInfo>;
 
 // ==========================================
 // 1.5 Spectral & Color Math
@@ -97,6 +105,19 @@ fn rgb_to_spectrum_vec4(rgb: vec3f, wavelengths: vec4f) -> vec4f {
         rgb_to_spectrum_eval(rgb, wavelengths.z),
         rgb_to_spectrum_eval(rgb, wavelengths.w)
     );
+}
+
+fn blackbody_radiance(lambda_nm: f32, temp_k: f32) -> f32 {
+    let lambda_m = lambda_nm * 1e-9;
+    let h = 6.62607015e-34; 
+    let c = 299792458.0;    
+    let k = 1.380649e-23;   
+
+    let c1 = 2.0 * h * c * c;
+    let c2 = (h * c) / (k * temp_k);
+    
+    let radiance = c1 / (pow(lambda_m, 5.0) * (exp(c2 / lambda_m) - 1.0));
+    return radiance * 1e-13; 
 }
 
 // ==========================================
@@ -315,21 +336,26 @@ fn ray_color(r_in: Ray, wavelengths: vec4f) -> vec4f {
         
         // --- Emission ---
         // [変更] 発光もスペクトル変換を通す
-        let max_emission = max(mat.emission.r, max(mat.emission.g, mat.emission.b));
         var mat_spectral_emission = vec4f(0.0);
-        if max_emission > 0.0 {
-            let normalized_emission = mat.emission.rgb / max_emission;
-            mat_spectral_emission = rgb_to_spectrum_vec4(normalized_emission, wavelengths) * max_emission;
-        }
 
         if mat_type == 3u {
+            let temp_k = mat.color.r;
+            let intensity = mat.color.g;
+            
+            // 4波長それぞれの黒体放射を計算
+            mat_spectral_emission = vec4f(
+                blackbody_radiance(wavelengths.x, temp_k),
+                blackbody_radiance(wavelengths.y, temp_k),
+                blackbody_radiance(wavelengths.z, temp_k),
+                blackbody_radiance(wavelengths.w, temp_k)
+            ) * intensity;
+            
             let no_cull = mat.extra.y > 0.0;
             if is_front_face || no_cull {
                 accumulated_color += mat_spectral_emission * throughput;
             }
             break; 
         }
-        accumulated_color += mat_spectral_emission * throughput;
 
         // --- BSDF ---
         let scatter_rec = sample_bsdf(r.dir, ffnormal, mat, is_front_face, wavelengths,throughput);
@@ -410,7 +436,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 
     let new_acc = current_acc + vec4f(pixel_color_linear, 1.0);
     accumulation[idx] = new_acc;
-    let exposure = 1.5;
+    let exposure = 1.0;
     // 蓄積結果の平均化
     var  final_color = max(new_acc.rgb / new_acc.w * exposure, vec3f(0.0));
     // 1. 人間の目が感じる「明るさ(輝度: Luma)」を計算

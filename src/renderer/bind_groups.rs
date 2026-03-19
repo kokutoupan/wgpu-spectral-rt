@@ -44,6 +44,10 @@ pub fn create_compute_bind_group(
                 binding: 7,
                 resource: scene_resources.mesh_info_buffer.as_entire_binding(),
             },
+            wgpu::BindGroupEntry {
+                binding: 8,
+                resource: scene_resources.light_buffer.as_entire_binding(),
+            },
         ],
     })
 }
