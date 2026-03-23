@@ -54,7 +54,7 @@ impl Renderer {
         let photons_buffer = create_buffer(
             &ctx.device,
             "Photons Buffer",
-            (MAX_PHOTONS as u64) * 64,
+            (MAX_PHOTONS as u64) * 32,
             wgpu::BufferUsages::STORAGE,
         );
         // カウンター(u32 = 4 bytes)

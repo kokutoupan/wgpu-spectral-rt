@@ -1,10 +1,8 @@
 struct Photon {
     position: vec3f,
-    pad1: u32,
+    wavelength: f32,
     direction: vec3f,
-    pad2: u32,
-    wavelengths: vec4f,
-    energy: vec4f,
+    energy: f32,
 }
 
 @group(0) @binding(0) var<storage, read> photons: array<Photon>;
@@ -37,7 +35,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let photon = photons[id.x];
     
     // エネルギーがない（空中に飛んでいった）フォトンは無視
-    if photon.energy.x == 0.0 && photon.energy.y == 0.0 && photon.energy.z == 0.0 {
+    if photon.energy == 0.0 {
         return;
     }
 

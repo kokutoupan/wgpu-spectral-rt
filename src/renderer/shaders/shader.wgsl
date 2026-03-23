@@ -38,9 +38,10 @@ struct LightInfo {
 }
 
 struct Photon {
-    position: vec3f, pad1: u32,
-    direction: vec3f, pad2: u32,
-    wavelengths: vec4f, energy: vec4f,
+    position: vec3f,
+    wavelength: f32,
+    direction: vec3f,
+    energy: f32,
 }
 
 struct Ray {
@@ -218,8 +219,9 @@ const CELL_SIZE: f32 = 0.02;
 const GATHER_RADIUS: f32 = 0.02; // 検索半径(5cm)
 const GATHER_RADIUS_SQ: f32 = GATHER_RADIUS * GATHER_RADIUS;
 const MAX_PHOTON = 1048576u;
+const SPECTRAL_RADIUS = 20.0;
 
-fn gather_photons(hit_pos: vec3f, normal: vec3f) -> vec4f {
+fn gather_photons(hit_pos: vec3f, normal: vec3f, camera_wavelengths: vec4f) -> vec4f {
     var total_energy = vec4f(0.0);
     let grid_pos = vec3i(floor(hit_pos / CELL_SIZE));
     
@@ -240,17 +242,24 @@ fn gather_photons(hit_pos: vec3f, normal: vec3f) -> vec4f {
             // 壁の裏側など、法線と逆向きのフォトンは除外
             if dot(normal, photon.direction) > 0.0 {
                 let dist = sqrt(dist_sq);
-                let weight = 1.0 - (dist / GATHER_RADIUS);
+                let spatial_weight = 1.0 - (dist / GATHER_RADIUS);
+
+                let lambda_diff = abs(camera_wavelengths - vec4f(photon.wavelength));
+    
+                // 差が0なら重み1.0、20nm離れていたら重み0.0になる (ガウス分布の近似)
+                let spectral_weight = max(vec4f(1.0) - (lambda_diff / SPECTRAL_RADIUS), vec4f(0.0));
                 
-                total_energy += photon.energy * weight;
+                total_energy += photon.energy * spatial_weight * spectral_weight;
             }
         }
         photon_id = grid_next[photon_id];
     }
     
     // 密度推定：集めたエネルギーを「円の面積」と「発射した全フォトン数」で割る
-    // 定数 500.0 は露出(明るさ)の調整用マジックナンバーです。暗ければ上げてください。
-    let density_factor = 500.0 / (PI * GATHER_RADIUS_SQ * f32(MAX_PHOTON));
+    let spatial_norm  = 3.0 / (PI * GATHER_RADIUS_SQ);
+    let spectral_norm = 1.0 / SPECTRAL_RADIUS;
+    let count_norm    = 1.0 / f32(MAX_PHOTON);
+    let density_factor = spatial_norm * spectral_norm * count_norm;
     return total_energy * density_factor;
 }
 
@@ -428,11 +437,11 @@ fn ray_color(r_in: Ray, wavelengths: vec4f) -> vec4f {
             let mat_spectral_color = rgb_to_spectrum_vec4(mat.color.rgb, wavelengths);
             // // 周辺のフォトンをかき集めて明るさを計算
             let hit_pos = r.origin + r.dir * hit.t;
-            let gathered_light = gather_photons(hit_pos, ffnormal);
+            let gathered_light = gather_photons(hit_pos, ffnormal, wavelengths);
             // let gathered_light = vec4f(0.0);
             
             // // 壁の色(スペクトル)と掛け合わせて、最終的な色とする
-            accumulated_color += throughput * mat_spectral_color * gathered_light;
+            accumulated_color += throughput *( mat_spectral_color/PI) * gathered_light;
         }
 
 

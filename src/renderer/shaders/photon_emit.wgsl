@@ -18,11 +18,9 @@ struct LightInfo {
 
 struct Photon {
     position: vec3f,
-    pad1: u32,
+    wavelength: f32,
     direction: vec3f,
-    pad2: u32,
-    wavelengths: vec4f,
-    energy: vec4f,
+    energy: f32,
 }
 
 // --- 構造体とバインディングの追加 ---
@@ -138,10 +136,11 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let light_idx = min(u32(rand() * f32(num_lights)), num_lights - 1u);
     let light = lights[light_idx];
 
-    // --- 起点と方向の計算 (前回と同じ) ---
+    // --- 起点と方向の計算 ---
     let edge1 = light.v1.xyz - light.v0.xyz;
     let edge2 = light.v2.xyz - light.v0.xyz;
     let normal = normalize(cross(edge1, edge2));
+    let light_area = length(cross(edge1, edge2)) * 0.5;
 
     let r1 = rand(); let r2 = rand(); let sqrt_r1 = sqrt(r1);
     let u = 1.0 - sqrt_r1; let v = r2 * sqrt_r1; let w = 1.0 - u - v;
@@ -151,21 +150,10 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let temp_k = light.params[1];
     let intensity = light.params[2];
 
-    let hero_lambda = LAMBDA_MIN + rand() * LAMBDA_RANGE;
-    var wavelengths = vec4f(
-        hero_lambda,
-        hero_lambda + (LAMBDA_RANGE / 4.0) * 1.0,
-        hero_lambda + (LAMBDA_RANGE / 4.0) * 2.0,
-        hero_lambda + (LAMBDA_RANGE / 4.0) * 3.0
-    );
-    wavelengths = LAMBDA_MIN + (wavelengths - LAMBDA_MIN) % LAMBDA_RANGE;
+    let wavelength =  LAMBDA_MIN + rand() * LAMBDA_RANGE;
+    let flux = blackbody_radiance(wavelength, temp_k) * light_area * PI * LAMBDA_RANGE;
 
-    var current_energy = vec4f(
-        blackbody_radiance(wavelengths.x, temp_k),
-        blackbody_radiance(wavelengths.y, temp_k),
-        blackbody_radiance(wavelengths.z, temp_k),
-        blackbody_radiance(wavelengths.w, temp_k)
-    ) * intensity;
+    var current_energy = flux * intensity;
 
     // ==========================================
     // レイの追跡開始！
@@ -210,7 +198,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
                     photons[idx].position = hit_pos;
                     // 後でカメラから集める時のために、光が入ってきた方向(-ray_dir)を記録しておく
                     photons[idx].direction = -ray_dir; 
-                    photons[idx].wavelengths = wavelengths;
+                    photons[idx].wavelength = wavelength;
                     // 壁の反射率(RGB->XYZ近似など)を掛けるのが正確
                     photons[idx].energy = current_energy; 
                 }
@@ -225,7 +213,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
         } else if mat_type == 2u {
             // ガラス(Dielectric) -> カメラパスと同じく波長分散させて屈折！
             let A = mat.extra.z; let B = mat.extra.w;
-            let lambda_um = wavelengths.x / 1000.0;
+            let lambda_um = wavelength / 1000.0;
             let ir = A + (B / (lambda_um * lambda_um));
             let refraction_ratio = select(ir, 1.0 / ir, is_front_face);
             let unit_dir = normalize(ray_dir);
@@ -244,12 +232,6 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
             } else {
                 is_caustic = true;
                 ray_dir = refract(unit_dir, ffnormal, refraction_ratio);
-                
-                if B > 0.0 {
-                    let is_collapsed = (current_energy.y < 0.0001 && current_energy.z < 0.0001 && current_energy.w < 0.0001);
-                    let multiplier = select(4.0, 1.0, is_collapsed);
-                    current_energy = vec4f(current_energy.x * multiplier, 0.0, 0.0, 0.0);
-                }
                 
                 let offset_normal = select(-ffnormal, ffnormal, dot(ray_dir, ffnormal) > 0.0);
                 ray_pos = hit_pos + offset_normal * 0.001;
