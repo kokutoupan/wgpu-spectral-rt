@@ -37,6 +37,12 @@ struct LightInfo {
     params: vec4f,
 }
 
+struct Photon {
+    position: vec3f, pad1: u32,
+    direction: vec3f, pad2: u32,
+    wavelengths: vec4f, energy: vec4f,
+}
+
 struct Ray {
     origin: vec3f,
     dir: vec3f,
@@ -57,6 +63,9 @@ struct ScatterRecord {
 @group(0) @binding(6) var<storage, read> indices: array<u32>;
 @group(0) @binding(7) var<storage, read> mesh_infos: array<MeshInfo>;
 @group(0) @binding(8) var<storage, read> lights: array<LightInfo>;
+@group(0) @binding(9) var<storage, read> photons: array<Photon>;
+@group(0) @binding(10) var<storage, read> grid_head: array<u32>;
+@group(0) @binding(11) var<storage, read> grid_next: array<u32>;
 
 // ==========================================
 // 1.5 Spectral & Color Math
@@ -200,6 +209,51 @@ fn reflectance(cosine: f32, ref_idx: f32) -> f32 {
     return r0 + (1.0 - r0) * pow((1.0 - cosine), 5.0);
 }
 
+// ====================
+// 3.5 Photon Mapping
+// ====================
+
+const HASH_SIZE: u32 = 4 * 1024 * 1024; 
+const CELL_SIZE: f32 = 0.02;     
+const GATHER_RADIUS: f32 = 0.02; // 検索半径(5cm)
+const GATHER_RADIUS_SQ: f32 = GATHER_RADIUS * GATHER_RADIUS;
+const MAX_PHOTON = 1048576u;
+
+fn gather_photons(hit_pos: vec3f, normal: vec3f) -> vec4f {
+    var total_energy = vec4f(0.0);
+    let grid_pos = vec3i(floor(hit_pos / CELL_SIZE));
+    
+    // ハッシュ計算 (build_grid.wgsl と完全に同じ式)
+    let p1 = 73856093u; let p2 = 19349663u; let p3 = 83492791u;
+    let h = (u32(grid_pos.x) * p1 ^ u32(grid_pos.y) * p2 ^ u32(grid_pos.z) * p3) & (HASH_SIZE - 1u);
+
+    // 連結リストを辿る
+    var photon_id = grid_head[h];
+    for(var loop_count = 0; loop_count < 64; loop_count++) {
+        if(photon_id == 0xFFFFFFFFu) {
+            break;
+        }
+        let photon = photons[photon_id];
+        let dist_sq = dot(hit_pos - photon.position, hit_pos - photon.position); // 距離の2乗
+        
+        if dist_sq < GATHER_RADIUS_SQ {
+            // 壁の裏側など、法線と逆向きのフォトンは除外
+            if dot(normal, photon.direction) > 0.0 {
+                let dist = sqrt(dist_sq);
+                let weight = 1.0 - (dist / GATHER_RADIUS);
+                
+                total_energy += photon.energy * weight;
+            }
+        }
+        photon_id = grid_next[photon_id];
+    }
+    
+    // 密度推定：集めたエネルギーを「円の面積」と「発射した全フォトン数」で割る
+    // 定数 500.0 は露出(明るさ)の調整用マジックナンバーです。暗ければ上げてください。
+    let density_factor = 500.0 / (PI * GATHER_RADIUS_SQ * f32(MAX_PHOTON));
+    return total_energy * density_factor;
+}
+
 // ==========================================
 // 4. BSDF Evaluation
 // ==========================================
@@ -313,6 +367,9 @@ fn ray_color(r_in: Ray, wavelengths: vec4f) -> vec4f {
     var accumulated_color = vec4f(0.0);
     var throughput = vec4f(1.0);
 
+    var has_hit_diffuse = false;
+    var is_caustic_path = false;
+
     for (var i = 0u; i < MAX_DEPTH; i++) {
         var rq: ray_query;
         rayQueryInitialize(&rq, tlas, RayDesc(0u, 0xFFu, T_MIN, T_MAX, r.origin, r.dir));
@@ -340,6 +397,7 @@ fn ray_color(r_in: Ray, wavelengths: vec4f) -> vec4f {
         var mat_spectral_emission = vec4f(0.0);
 
         if mat_type == 3u {
+            if is_caustic_path { break; }
             let temp_k = mat.color.r;
             let intensity = mat.color.g;
             
@@ -357,6 +415,26 @@ fn ray_color(r_in: Ray, wavelengths: vec4f) -> vec4f {
             }
             break; 
         }
+
+        if mat_type == 0u {
+            has_hit_diffuse = true;
+            is_caustic_path = false;
+        } else if mat_type == 2u {
+            if has_hit_diffuse { is_caustic_path = true; }
+        }
+
+        // --- Photon Mapping (Diffuse Surfaces Only) ---
+        if mat_type == 0u { // Diffuse
+            let mat_spectral_color = rgb_to_spectrum_vec4(mat.color.rgb, wavelengths);
+            // // 周辺のフォトンをかき集めて明るさを計算
+            let hit_pos = r.origin + r.dir * hit.t;
+            let gathered_light = gather_photons(hit_pos, ffnormal);
+            // let gathered_light = vec4f(0.0);
+            
+            // // 壁の色(スペクトル)と掛け合わせて、最終的な色とする
+            accumulated_color += throughput * mat_spectral_color * gathered_light;
+        }
+
 
         // --- BSDF ---
         let scatter_rec = sample_bsdf(r.dir, ffnormal, mat, is_front_face, wavelengths,throughput);

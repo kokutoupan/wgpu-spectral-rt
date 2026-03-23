@@ -52,6 +52,38 @@ pub fn create_photon_emit_bind_group(
     })
 }
 
+pub fn create_build_grid_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    photons_buffer: &wgpu::Buffer,
+    photon_count_buffer: &wgpu::Buffer,
+    grid_head_buffer: &wgpu::Buffer,
+    grid_next_buffer: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Build Grid Bind Group"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: photons_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: photon_count_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: grid_head_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: grid_next_buffer.as_entire_binding(),
+            },
+        ],
+    })
+}
+
 pub fn create_compute_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -59,6 +91,9 @@ pub fn create_compute_bind_group(
     storage_view: &wgpu::TextureView,
     camera_buffer: &wgpu::Buffer,
     accumulation_buffer: &wgpu::Buffer,
+    photons_buffer: &wgpu::Buffer,
+    grid_head_buffer: &wgpu::Buffer,
+    grid_next_buffer: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
@@ -99,6 +134,18 @@ pub fn create_compute_bind_group(
             wgpu::BindGroupEntry {
                 binding: 8,
                 resource: scene_resources.light_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 9,
+                resource: photons_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 10,
+                resource: grid_head_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 11,
+                resource: grid_next_buffer.as_entire_binding(),
             },
         ],
     })

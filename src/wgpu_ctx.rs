@@ -45,8 +45,10 @@ impl WgpuContext {
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,
                 required_features: wgpu::Features::EXPERIMENTAL_RAY_QUERY,
-                required_limits: wgpu::Limits::default()
-                    .using_minimum_supported_acceleration_structure_values(),
+                required_limits: wgpu::Limits {
+                    max_storage_buffers_per_shader_stage: 16,
+                    ..adapter.limits()
+                },
                 experimental_features: unsafe { wgpu::ExperimentalFeatures::enabled() },
                 ..Default::default()
             })

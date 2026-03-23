@@ -1,5 +1,6 @@
 pub mod bind_groups;
 pub mod blit_pass;
+pub mod build_grid_pass;
 pub mod compute_pass;
 pub mod debug_photons_pass;
 pub mod photon_emit_pass;
@@ -9,14 +10,17 @@ use crate::utils::wgpu::*;
 use crate::wgpu_ctx::WgpuContext;
 
 use blit_pass::BlitPass;
+use build_grid_pass::BuildGridPass;
 use compute_pass::ComputePass;
 use debug_photons_pass::DebugPhotonsPass;
 use photon_emit_pass::PhotonEmitPass;
 
 pub const MAX_PHOTONS: u32 = 1024 * 1024;
+pub const HASH_SIZE: u32 = 4 * 1024 * 1024;
 
 pub struct Renderer {
     pub photon_emit_pass: PhotonEmitPass,
+    pub build_grid_pass: BuildGridPass,
     pub compute_pass: ComputePass,
     pub blit_pass: BlitPass,
     pub debug_photons_pass: DebugPhotonsPass,
@@ -28,6 +32,10 @@ pub struct Renderer {
 
     pub photons_buffer: wgpu::Buffer,
     pub photon_count_buffer: wgpu::Buffer,
+
+    pub grid_head_buffer: wgpu::Buffer,
+    pub grid_next_buffer: wgpu::Buffer,
+    pub clear_head_data: Vec<u32>, // クリア用のデータ
 
     pub target_width: u32,
     pub target_height: u32,
@@ -66,6 +74,27 @@ impl Renderer {
             camera_buffer,
         );
 
+        let grid_head_buffer = create_buffer(
+            &ctx.device,
+            "Grid Head Buffer",
+            (HASH_SIZE as u64) * 4,
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        );
+        let grid_next_buffer = create_buffer(
+            &ctx.device,
+            "Grid Next Buffer",
+            (HASH_SIZE as u64) * 4,
+            wgpu::BufferUsages::STORAGE,
+        );
+
+        let build_grid_pass = BuildGridPass::new(
+            ctx,
+            &photons_buffer,
+            &photon_count_buffer,
+            &grid_head_buffer,
+            &grid_next_buffer,
+        );
+
         // --- レイトレース用バッファの作成 ---
         let accumulation_buffer = create_buffer(
             &ctx.device,
@@ -87,6 +116,9 @@ impl Renderer {
             &storage_view,
             camera_buffer,
             &accumulation_buffer,
+            &photons_buffer,
+            &grid_head_buffer,
+            &grid_next_buffer,
         );
 
         let blit_pass = BlitPass::new(ctx, &storage_view, &sampler);
@@ -95,6 +127,7 @@ impl Renderer {
 
         Self {
             photon_emit_pass,
+            build_grid_pass,
             compute_pass,
             blit_pass,
             debug_photons_pass,
@@ -104,6 +137,9 @@ impl Renderer {
             frame_count: 0,
             photons_buffer,
             photon_count_buffer,
+            grid_head_buffer,
+            grid_next_buffer,
+            clear_head_data: vec![u32::MAX; HASH_SIZE as usize],
             target_width,
             target_height,
         }
@@ -139,21 +175,29 @@ impl Renderer {
 
         ctx.queue
             .write_buffer(&self.photon_count_buffer, 0, bytemuck::cast_slice(&[0u32]));
+        ctx.queue.write_buffer(
+            &self.grid_head_buffer,
+            0,
+            bytemuck::cast_slice(&self.clear_head_data),
+        );
 
         // 1. Photon Emit Pass
         self.photon_emit_pass.record(&mut encoder, MAX_PHOTONS);
 
-        // 2. Compute Pass
+        // 2. Build Grid Pass
+        self.build_grid_pass.record(&mut encoder, MAX_PHOTONS);
+
+        // 3. Compute Pass
         self.compute_pass
             .record(&mut encoder, self.target_width, self.target_height);
 
-        // 2. Render Pass (Blit)
-        // self.blit_pass.record(&mut encoder, view);
+        // 4. Render Pass (Blit)
+        self.blit_pass.record(&mut encoder, view);
 
-        // 3. Debug Pass (Photons Overlay)
+        // 5. Debug Pass (Photons Overlay)
         // Blitされた絵の上に、フォトンを重ねて描画する
-        self.debug_photons_pass
-            .record(&mut encoder, view, MAX_PHOTONS);
+        // self.debug_photons_pass
+        //     .record(&mut encoder, view, MAX_PHOTONS);
 
         ctx.queue.submit(std::iter::once(encoder.finish()));
         self.frame_count += 1;

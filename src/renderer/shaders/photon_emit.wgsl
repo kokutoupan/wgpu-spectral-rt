@@ -127,7 +127,7 @@ fn get_interpolated_normal(mesh_id: u32, primitive_index: u32, barycentric: vec2
 // ------------------------------------------
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) id: vec3u) {
-    let max_photons = 1048576u; 
+    let max_photons = 1024u * 1024u; 
     if id.x >= max_photons { return; }
 
     init_rng(id.x, camera.frame_count);
@@ -173,6 +173,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     var ray_pos = emit_pos + emit_dir * 0.001; // 自己交差回避
     var ray_dir = emit_dir;
 
+    var is_caustic = false;
 
     // 最大5回バウンスさせる（ガラスを通って壁に落ちるには最低2〜3回必要）
     for (var depth = 0; depth < 5; depth++) {
@@ -203,17 +204,19 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
         // --- 材質ごとの処理 ---
         if mat_type == 0u { 
 
-            let idx = atomicAdd(&photon_count, 1u);
-            if idx < max_photons {
-                photons[idx].position = hit_pos;
-                // 後でカメラから集める時のために、光が入ってきた方向(-ray_dir)を記録しておく
-                photons[idx].direction = -ray_dir; 
-                photons[idx].wavelengths = wavelengths;
-                // 壁の反射率(RGB->XYZ近似など)を掛けるのが正確
-                photons[idx].energy = current_energy; 
+            if is_caustic {
+                let idx = atomicAdd(&photon_count, 1u);
+                if idx < max_photons {
+                    photons[idx].position = hit_pos;
+                    // 後でカメラから集める時のために、光が入ってきた方向(-ray_dir)を記録しておく
+                    photons[idx].direction = -ray_dir; 
+                    photons[idx].wavelengths = wavelengths;
+                    // 壁の反射率(RGB->XYZ近似など)を掛けるのが正確
+                    photons[idx].energy = current_energy; 
+                }
             }
             break; // 定着したので追跡終了
-            
+
         } else if mat_type == 1u {
             // 金属(Metal) -> 反射してさらに飛ばす
             ray_dir = reflect(normalize(ray_dir), ffnormal);
@@ -239,6 +242,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
                 let offset_normal = select(-ffnormal, ffnormal, dot(ray_dir, ffnormal) > 0.0);
                 ray_pos = hit_pos + offset_normal * 0.001;
             } else {
+                is_caustic = true;
                 ray_dir = refract(unit_dir, ffnormal, refraction_ratio);
                 
                 if B > 0.0 {

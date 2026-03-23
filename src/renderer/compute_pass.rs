@@ -15,6 +15,9 @@ impl ComputePass {
         storage_view: &wgpu::TextureView,
         camera_buffer: &wgpu::Buffer,
         accumulation_buffer: &wgpu::Buffer,
+        photons_buffer: &wgpu::Buffer,
+        grid_head_buffer: &wgpu::Buffer,
+        grid_next_buffer: &wgpu::Buffer,
     ) -> Self {
         let shader = ctx
             .device
@@ -115,6 +118,36 @@ impl ComputePass {
                             },
                             count: None,
                         },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 9,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 10,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 11,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
                     ],
                 });
 
@@ -145,6 +178,9 @@ impl ComputePass {
             storage_view,
             camera_buffer,
             accumulation_buffer,
+            photons_buffer,
+            grid_head_buffer,
+            grid_next_buffer,
         );
 
         Self {
