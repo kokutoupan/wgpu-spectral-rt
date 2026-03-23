@@ -492,10 +492,27 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 
     let ray = Ray(origin, direction_jittered);
 
+// ------------------------------------------
+    // Hero Wavelength Sampling (Analytical Inverse Transform Sampling)
     // ------------------------------------------
-    // Hero Wavelength Sampling
-    // ------------------------------------------
-    let hero_lambda = LAMBDA_MIN + rand() * LAMBDA_RANGE;
+
+    let peak = 555.0;  // 人間の目の感度ピーク (緑〜黄)
+    let gamma = 30.0;  // 分布の広がり具合
+
+    // 1. CDF (累積分布関数) の最小・最大値を計算
+    // CDF(x) = (1/PI) * atan((x - peak) / gamma) + 0.5
+    let cdf_min = (1.0 / PI) * atan((LAMBDA_MIN - peak) / gamma) + 0.5;
+    let cdf_max = (1.0 / PI) * atan((LAMBDA_MAX - peak) / gamma) + 0.5;
+    let cdf_range = cdf_max - cdf_min;
+
+    // 2. 乱数 u (0.0~1.0) を [cdf_min, cdf_max] にマッピング
+    let u = cdf_min + rand() * cdf_range;
+
+    // x = peak + gamma * tan(PI * (u - 0.5))
+    var hero_lambda = peak + gamma * tan(PI * (u - 0.5));
+    hero_lambda = clamp(hero_lambda, LAMBDA_MIN, LAMBDA_MAX);
+
+    // 4波長を展開
     var wavelengths = vec4f(
         hero_lambda,
         hero_lambda + (LAMBDA_RANGE / 4.0) * 1.0,
@@ -504,20 +521,46 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     );
     wavelengths = LAMBDA_MIN + (wavelengths - LAMBDA_MIN) % LAMBDA_RANGE;
 
+    let rot = rand();
+    if rot < 0.25 {
+    } else if rot < 0.5 {
+        wavelengths = wavelengths.yzwx;
+    } else if rot < 0.75 {
+        wavelengths = wavelengths.zwxy;
+    } else {
+        wavelengths = wavelengths.wxyz;
+    }
+
     let spectral_radiance = ray_color(ray, wavelengths);
 
     // ------------------------------------------
-    // Spectral to RGB (XYZ Color Matching)
+    // Spectral to RGB & MIS Weight
     // ------------------------------------------
     var xyz = vec3f(0.0);
     xyz += sample_cie_xyz(wavelengths.x) * spectral_radiance.x;
     xyz += sample_cie_xyz(wavelengths.y) * spectral_radiance.y;
     xyz += sample_cie_xyz(wavelengths.z) * spectral_radiance.z;
     xyz += sample_cie_xyz(wavelengths.w) * spectral_radiance.w;
-    
-    xyz *= LAMBDA_RANGE / 4.0;
 
-    // Linear sRGB に変換し、トーンマッピング(ACES近似など)を挟まずにそのまま蓄積
+    // 4. 数学的に完全に正しい PDF (確率密度関数) の計算
+    // PDF(x) = 1 / (cdf_range * PI * gamma * (1 + ((x - peak)/gamma)^2))
+    let pdf_norm = 1.0 / (cdf_range * PI * gamma);
+    
+    let diff0 = (wavelengths.x - peak) / gamma;
+    let p0 = pdf_norm / (1.0 + diff0 * diff0);
+    
+    let diff1 = (wavelengths.y - peak) / gamma;
+    let p1 = pdf_norm / (1.0 + diff1 * diff1);
+    
+    let diff2 = (wavelengths.z - peak) / gamma;
+    let p2 = pdf_norm / (1.0 + diff2 * diff2);
+    
+    let diff3 = (wavelengths.w - peak) / gamma;
+    let p3 = pdf_norm / (1.0 + diff3 * diff3);
+
+    let sum_pdf = p0 + p1 + p2 + p3;
+    xyz *= 1.0 / sum_pdf;
+
     let pixel_color_linear = XYZ_TO_SRGB * xyz;
 
     let idx = id.y * size.x + id.x;

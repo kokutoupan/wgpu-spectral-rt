@@ -136,7 +136,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let light_idx = min(u32(rand() * f32(num_lights)), num_lights - 1u);
     let light = lights[light_idx];
 
-    // --- 起点と方向の計算 ---
+// --- 起点と方向の計算 ---
     let edge1 = light.v1.xyz - light.v0.xyz;
     let edge2 = light.v2.xyz - light.v0.xyz;
     let normal = normalize(cross(edge1, edge2));
@@ -150,8 +150,32 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let temp_k = light.params[1];
     let intensity = light.params[2];
 
-    let wavelength =  LAMBDA_MIN + rand() * LAMBDA_RANGE;
-    let flux = blackbody_radiance(wavelength, temp_k) * light_area * PI * LAMBDA_RANGE;
+    // ==========================================
+    // 視覚的重点サンプリング (Analytical Inverse Transform Sampling)
+    // ==========================================
+    let peak = 555.0;  // 視感度のピーク
+    let gamma = 40.0;  // 分布の広がり (コーシー分布)
+
+    // 1. CDF (累積分布関数) の最小・最大値を計算
+    let cdf_min = (1.0 / PI) * atan((LAMBDA_MIN - peak) / gamma) + 0.5;
+    let cdf_max = (1.0 / PI) * atan((LAMBDA_MAX - peak) / gamma) + 0.5;
+    let cdf_range = cdf_max - cdf_min;
+
+    // 2. 乱数 rnd_val を [cdf_min, cdf_max] にマッピング 
+    let rnd_val = cdf_min + rand() * cdf_range;
+
+    // 3. 解析的な逆関数を用いて O(1) で波長を決定！
+    var wavelength = peak + gamma * tan(PI * (rnd_val - 0.5));
+    wavelength = clamp(wavelength, LAMBDA_MIN, LAMBDA_MAX);
+
+    // 4. 選択された波長の PDF (確率密度関数) を計算
+    let pdf_norm = 1.0 / (cdf_range * PI * gamma);
+    let diff_w = (wavelength - peak) / gamma;
+    let pdf = pdf_norm / (1.0 + diff_w * diff_w);
+
+    // 5. 物理的に正しい Flux の計算 (Radiance / PDF)
+    let radiance = blackbody_radiance(wavelength, temp_k);
+    let flux = (radiance / pdf) * light_area * PI;
 
     var current_energy = flux * intensity;
 
