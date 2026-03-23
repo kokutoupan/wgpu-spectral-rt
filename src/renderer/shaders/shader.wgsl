@@ -225,6 +225,10 @@ fn gather_photons(hit_pos: vec3f, normal: vec3f, camera_wavelengths: vec4f) -> v
     var total_energy = vec4f(0.0);
     let grid_pos = vec3i(floor(hit_pos / CELL_SIZE));
     
+    let initial_radius = 0.02;
+    let current_radius = initial_radius * pow(f32(camera.frame_count + 1u), -0.15);
+    let current_radius_sq = current_radius * current_radius;
+
     // ハッシュ計算 (build_grid.wgsl と完全に同じ式)
     let p1 = 73856093u; let p2 = 19349663u; let p3 = 83492791u;
     let h = (u32(grid_pos.x) * p1 ^ u32(grid_pos.y) * p2 ^ u32(grid_pos.z) * p3) & (HASH_SIZE - 1u);
@@ -238,11 +242,11 @@ fn gather_photons(hit_pos: vec3f, normal: vec3f, camera_wavelengths: vec4f) -> v
         let photon = photons[photon_id];
         let dist_sq = dot(hit_pos - photon.position, hit_pos - photon.position); // 距離の2乗
         
-        if dist_sq < GATHER_RADIUS_SQ {
+        if dist_sq < current_radius_sq {
             // 壁の裏側など、法線と逆向きのフォトンは除外
             if dot(normal, photon.direction) > 0.0 {
                 let dist = sqrt(dist_sq);
-                let spatial_weight = 1.0 - (dist / GATHER_RADIUS);
+                let spatial_weight = 1.0 - (dist / current_radius);
 
                 let lambda_diff = abs(camera_wavelengths - vec4f(photon.wavelength));
     
@@ -256,7 +260,7 @@ fn gather_photons(hit_pos: vec3f, normal: vec3f, camera_wavelengths: vec4f) -> v
     }
     
     // 密度推定：集めたエネルギーを「円の面積」と「発射した全フォトン数」で割る
-    let spatial_norm  = 3.0 / (PI * GATHER_RADIUS_SQ);
+    let spatial_norm  = 3.0 / (PI * current_radius_sq);
     let spectral_norm = 1.0 / SPECTRAL_RADIUS;
     let count_norm    = 1.0 / f32(MAX_PHOTON);
     let density_factor = spatial_norm * spectral_norm * count_norm;
