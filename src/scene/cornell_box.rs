@@ -2,6 +2,7 @@ use crate::scene::builder::{MaterialUniform, SceneBuilder, SceneResources};
 use crate::scene::geometry;
 use glam::{Mat4, Vec3};
 
+#[allow(dead_code)]
 pub fn create_cornell_box(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneResources {
     let mut builder = SceneBuilder::new();
 

@@ -497,7 +497,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     // ------------------------------------------
 
     let peak = 555.0;  // 人間の目の感度ピーク (緑〜黄)
-    let gamma = 30.0;  // 分布の広がり具合
+    let gamma = 40.0;  // 分布の広がり具合
 
     // 1. CDF (累積分布関数) の最小・最大値を計算
     // CDF(x) = (1/PI) * atan((x - peak) / gamma) + 0.5
