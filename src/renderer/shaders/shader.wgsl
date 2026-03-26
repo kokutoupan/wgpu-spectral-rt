@@ -68,6 +68,13 @@ struct ScatterRecord {
 @group(0) @binding(10) var<storage, read> grid_head: array<u32>;
 @group(0) @binding(11) var<storage, read> grid_next: array<u32>;
 
+struct LightSample {
+    dir: vec3f,       // 光源への方向
+    dist: f32,        // 光源までの距離
+    pdf: f32,         // 立体角PDF
+    radiance: vec4f,  // 輝度(スペクトル)
+}
+
 // ==========================================
 // 1.5 Spectral & Color Math
 // ==========================================
@@ -221,9 +228,26 @@ const GATHER_RADIUS_SQ: f32 = GATHER_RADIUS * GATHER_RADIUS;
 const MAX_PHOTON = 1048576u;
 const SPECTRAL_RADIUS = 20.0;
 
+// グリッド・ジッター計算関数
+fn get_grid_jitter(frame_count: u32, cell_size: f32) -> vec3f {
+    // フレームカウント専用の軽量PCGハッシュ
+    let state = (frame_count * 114514u) * 747796405u + 2891336453u;
+    let word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    let seed = (word >> 22u) ^ word;
+
+    // 0~255 のビットを抽出して 0.0 ~ 1.0 の乱数3つに変換
+    let rx = f32(seed & 0xFFu) / 255.0;
+    let ry = f32((seed >> 8u) & 0xFFu) / 255.0;
+    let rz = f32((seed >> 16u) & 0xFFu) / 255.0;
+    
+    // セルサイズの範囲 [-0.5, 0.5] * cell_size でオフセットを返す
+    return (vec3f(rx, ry, rz) - vec3f(0.5)) * cell_size;
+}
+
 fn gather_photons(hit_pos: vec3f, normal: vec3f, camera_wavelengths: vec4f) -> vec4f {
     var total_energy = vec4f(0.0);
-    let grid_pos = vec3i(floor(hit_pos / CELL_SIZE));
+    let jitter = get_grid_jitter(camera.frame_count, CELL_SIZE);
+    let grid_pos = vec3i(floor((hit_pos + jitter) / CELL_SIZE));
     
     let initial_radius = 0.02;
     let current_radius = initial_radius * pow(f32(camera.frame_count + 1u), -0.15);
@@ -356,6 +380,60 @@ fn sample_bsdf(r_dir: vec3f, ffnormal: vec3f, mat: Material, is_front_face: bool
 // ==========================================
 // 5. Ray Tracing Core
 // ==========================================
+
+fn sample_random_light(hit_pos: vec3f, wavelengths: vec4f) -> LightSample {
+    var ls: LightSample;
+    let num_lights = arrayLength(&lights);
+    if num_lights == 0u {
+        ls.pdf = 0.0; return ls;
+    }
+
+    // 1. 光源をランダムに1つ選ぶ
+    let light_idx = min(u32(rand() * f32(num_lights)), num_lights - 1u);
+    let light = lights[light_idx];
+
+    // 2. 三角形光源の表面をサンプリング
+    let r1 = rand(); let r2 = rand(); let sqrt_r1 = sqrt(r1);
+    let u = 1.0 - sqrt_r1; let v = r2 * sqrt_r1; let w = 1.0 - u - v;
+    let p = light.v0.xyz * u + light.v1.xyz * v + light.v2.xyz * w;
+
+    let edge1 = light.v1.xyz - light.v0.xyz;
+    let edge2 = light.v2.xyz - light.v0.xyz;
+    let normal = normalize(cross(edge1, edge2));
+    let area = length(cross(edge1, edge2)) * 0.5;
+
+    // 3. 方向と距離の計算
+    let dir_to_light = p - hit_pos;
+    let dist_sq = dot(dir_to_light, dir_to_light);
+    let dist = sqrt(dist_sq);
+    let l = dir_to_light / dist;
+    
+    let cos_light = max(dot(normal, -l), 0.0);
+
+    // 裏面から当たった場合は無効
+    if cos_light <= 0.0001 {
+        ls.pdf = 0.0; return ls;
+    }
+
+    ls.dir = l;
+    ls.dist = dist;
+    
+    // 4. 面積PDFを立体角PDFに変換
+    ls.pdf = dist_sq / (area * f32(num_lights) * cos_light);
+
+    // 5. 光源のスペクトルエネルギーを計算
+    let temp_k = light.params[1];
+    let intensity = light.params[2];
+    ls.radiance = vec4f(
+        blackbody_radiance(wavelengths.x, temp_k),
+        blackbody_radiance(wavelengths.y, temp_k),
+        blackbody_radiance(wavelengths.z, temp_k),
+        blackbody_radiance(wavelengths.w, temp_k)
+    ) * intensity;
+
+    return ls;
+}
+
 fn get_interpolated_normal(mesh_id: u32, primitive_index: u32, barycentric: vec2f) -> vec3f {
     let mesh_info = mesh_infos[mesh_id];
     let idx_offset = mesh_info.index_offset + primitive_index * 3u;
@@ -382,6 +460,9 @@ fn ray_color(r_in: Ray, wavelengths: vec4f) -> vec4f {
 
     var has_hit_diffuse = false;
     var is_caustic_path = false;
+
+    var is_specular_bounce = true; // カメラレイやガラス・金属からの反射はtrue
+    var prev_bsdf_pdf = 0.0;       // 前回のバウンスの確率密度
 
     for (var i = 0u; i < MAX_DEPTH; i++) {
         var rq: ray_query;
@@ -424,6 +505,33 @@ fn ray_color(r_in: Ray, wavelengths: vec4f) -> vec4f {
             
             let no_cull = mat.extra.y > 0.0;
             if is_front_face || no_cull {
+                var mis_weight = 1.0;
+                // 直前のバウンスがDiffuse(NEEが行われた)だった場合のみウェイトを下げる
+                if !is_specular_bounce {
+                    // ヒットした光源ポリゴンの面積をその場で計算する！
+                    let mesh_info = mesh_infos[mesh_id];
+                    let idx_offset = mesh_info.index_offset + hit.primitive_index * 3u;
+                    let i0 = indices[idx_offset + 0u] + mesh_info.vertex_offset;
+                    let i1 = indices[idx_offset + 1u] + mesh_info.vertex_offset;
+                    let i2 = indices[idx_offset + 2u] + mesh_info.vertex_offset;
+                    
+                    let v0 = vertices[i0].pos.xyz;
+                    let v1 = vertices[i1].pos.xyz;
+                    let v2 = vertices[i2].pos.xyz;
+                    
+                    // 外積で三角形の面積を計算
+                    let area = length(cross(v1 - v0, v2 - v0)) * 0.5;
+                    
+                    // 光源の立体角PDFを計算
+                    let cos_light = max(dot(ffnormal, -r.dir), 0.0001);
+                    let dist_sq = hit.t * hit.t;
+                    let num_lights = f32(arrayLength(&lights));
+                    
+                    let light_pdf = dist_sq / (area * cos_light * num_lights);
+                    
+                    // Balance Heuristic
+                    mis_weight = prev_bsdf_pdf / (prev_bsdf_pdf + light_pdf);
+                }
                 accumulated_color += mat_spectral_emission * throughput;
             }
             break; 
@@ -439,19 +547,53 @@ fn ray_color(r_in: Ray, wavelengths: vec4f) -> vec4f {
         // --- Photon Mapping (Diffuse Surfaces Only) ---
         if mat_type == 0u { // Diffuse
             let mat_spectral_color = rgb_to_spectrum_vec4(mat.color.rgb, wavelengths);
-            // // 周辺のフォトンをかき集めて明るさを計算
             let hit_pos = r.origin + r.dir * hit.t;
+
+            // 1. Photon Mapping (ガラスの集光 / コースティクス)
             let gathered_light = gather_photons(hit_pos, ffnormal, wavelengths);
-            // let gathered_light = vec4f(0.0);
-            
             // // 壁の色(スペクトル)と掛け合わせて、最終的な色とする
             accumulated_color += throughput *( mat_spectral_color/PI) * gathered_light;
+
+            // 2. Light Sampling (直接光)
+            let ls = sample_random_light(hit_pos, wavelengths);
+            if ls.pdf > 0.0 {
+                // 光源に向かってシャドウレイを飛ばす！
+                var shadow_rq: ray_query;
+                rayQueryInitialize(&shadow_rq, tlas, RayDesc(0x4u, 0xFFu, 0.001, ls.dist - 0.001, hit_pos, ls.dir));
+                rayQueryProceed(&shadow_rq);
+                
+                // 何も遮るものがなければ(光源が見えたら)加算
+                if rayQueryGetCommittedIntersection(&shadow_rq).kind == 0u {
+                    let cos_theta = max(dot(ffnormal, ls.dir), 0.0);
+                    
+                    let bsdf_eval = mat_spectral_color / PI; 
+                    let bsdf_pdf = cos_theta / PI; // ランバートのコサインサンプリングのPDF
+
+                    // 【MISウェイトの計算 (Balance Heuristic)】
+                    let mis_weight = ls.pdf / (ls.pdf + bsdf_pdf);
+
+                    // 寄与の加算: Throughput * BSDF * Radiance * cos_theta / PDF * MIS_Weight
+                    accumulated_color += throughput * bsdf_eval * ls.radiance * cos_theta * (mis_weight / ls.pdf);
+                }
+            }
+
         }
 
 
         // --- BSDF ---
         let scatter_rec = sample_bsdf(r.dir, ffnormal, mat, is_front_face, wavelengths,throughput);
         if scatter_rec.absorbed { break; }
+
+        if mat_type == 0u {
+            is_specular_bounce = false; // DiffuseなのでNEEが発動した
+            // DiffuseのコサインサンプリングのPDF
+            let cos_theta = max(dot(ffnormal, scatter_rec.scatter_dir), 0.0001);
+            prev_bsdf_pdf = cos_theta / PI;
+        } else {
+            // ガラスや金属はNEEをしていないので、次に光源に当たったらウェイトは1.0のままにする
+            is_specular_bounce = true; 
+            prev_bsdf_pdf = 0.0;
+        }
         
         throughput *= scatter_rec.attenuation;
         r.origin = (r.origin + r.dir * hit.t);

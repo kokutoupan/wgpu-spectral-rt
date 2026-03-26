@@ -93,6 +93,7 @@ impl Renderer {
             &photon_count_buffer,
             &grid_head_buffer,
             &grid_next_buffer,
+            camera_buffer,
         );
 
         // --- レイトレース用バッファの作成 ---

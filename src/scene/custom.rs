@@ -8,7 +8,7 @@ pub fn create_custom_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneR
 
     // Scene Materials
     let mat_light = builder.add_material(MaterialUniform {
-        color: [6500.0, 1500.0, 0.0, 1.0], // Super high intensity vertical slit
+        color: [6500.0, 5.0, 0.0, 1.0], // Super high intensity vertical slit
         extra: [3., 0., 0., 0.],
     });
 
@@ -86,10 +86,10 @@ pub fn create_custom_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneR
     builder.add_light_instance(
         mesh_plane,
         mat_light,
-        Mat4::from_translation(Vec3::new(-1.8, -0.2, 0.0))
+        Mat4::from_translation(Vec3::new(-2.0, -0.2, 0.0))
             * Mat4::from_rotation_z(-std::f32::consts::FRAC_PI_2 + 0.02) // Point +X, slightly angled down
-            * Mat4::from_scale(Vec3::new(0.8, 1.0, 0.03)), // Vertical slit (0.8 tall, 0.03 wide)
-        [0.0, 6500.0, 1500.0, 0.0],
+            * Mat4::from_scale(Vec3::new(0.5, 1.0, 0.02)), // Vertical slit (0.8 tall, 0.03 wide)
+        [0.0, 6500.0, 5.0, 0.0],
     );
 
     // (Removed the dim ceiling light completely for a dark room)

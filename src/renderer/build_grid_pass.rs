@@ -13,6 +13,7 @@ impl BuildGridPass {
         photon_count_buffer: &wgpu::Buffer,
         grid_head_buffer: &wgpu::Buffer,
         grid_next_buffer: &wgpu::Buffer,
+        camera_buffer: &wgpu::Buffer,
     ) -> Self {
         let shader = ctx
             .device
@@ -67,6 +68,17 @@ impl BuildGridPass {
                                 min_binding_size: None,
                             },
                         },
+                        wgpu::BindGroupLayoutEntry {
+                            // camera
+                            binding: 4,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            count: None,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                        },
                     ],
                 });
 
@@ -94,6 +106,7 @@ impl BuildGridPass {
             photon_count_buffer,
             grid_head_buffer,
             grid_next_buffer,
+            camera_buffer,
         );
 
         Self {

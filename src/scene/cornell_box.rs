@@ -7,7 +7,7 @@ pub fn create_cornell_box(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneRe
     let mut builder = SceneBuilder::new();
 
     let mat_light = builder.add_material(MaterialUniform {
-        color: [6500.0, 5.0, 0.0, 1.0],
+        color: [6500.0, 1.0, 0.0, 1.0],
         extra: [3., 0., 0., 0.],
     });
     let mat_red = builder.add_material(MaterialUniform {
@@ -86,7 +86,7 @@ pub fn create_cornell_box(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneRe
         Mat4::from_translation(Vec3::new(0., 0.99, 0.))
             * Mat4::from_rotation_x(std::f32::consts::PI)
             * Mat4::from_scale(Vec3::splat(0.5)),
-        [0.0, 6500.0, 5.0, 0.0], // params: type=0, temp=6500, intensity=15
+        [0.0, 6500.0, 1.0, 0.0], // params: type=0, temp=6500, intensity=15
     );
 
     builder.add_instance(

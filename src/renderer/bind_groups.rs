@@ -59,6 +59,7 @@ pub fn create_build_grid_bind_group(
     photon_count_buffer: &wgpu::Buffer,
     grid_head_buffer: &wgpu::Buffer,
     grid_next_buffer: &wgpu::Buffer,
+    camera_buffer: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("Build Grid Bind Group"),
@@ -79,6 +80,10 @@ pub fn create_build_grid_bind_group(
             wgpu::BindGroupEntry {
                 binding: 3,
                 resource: grid_next_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: camera_buffer.as_entire_binding(),
             },
         ],
     })

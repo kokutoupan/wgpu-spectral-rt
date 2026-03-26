@@ -8,11 +8,9 @@ struct Camera {
 
 struct Photon {
     position: vec3f,
-    pad1: u32,
+    wavelength: f32,
     direction: vec3f,
-    pad2: u32,
-    wavelengths: vec4f,
-    energy: vec4f,
+    energy: f32,
 }
 
 @group(0) @binding(0) var<uniform> camera: Camera;
@@ -29,7 +27,7 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
     let photon = photons[id];
 
     // まだ書き込まれていないフォトン(エネルギー0)は画面外へ飛ばして無視
-    if (photon.energy.x == 0.0 && photon.energy.y == 0.0) {
+    if (photon.energy == 0.0) {
         out.clip_position = vec4f(2.0, 2.0, 2.0, 1.0);
         return out;
     }
