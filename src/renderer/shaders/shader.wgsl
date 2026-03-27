@@ -211,6 +211,44 @@ fn fresnel_schlick_vec4(cos_theta: f32, f0: vec4f) -> vec4f {
     return f0 + (vec4f(1.0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+// ==========================================
+// 薄膜干渉 (Thin-Film Interference)
+// ==========================================
+// n1: 外側の屈折率 (空気 = 1.0)
+// n2: 膜の屈折率 (水/石鹸水 = 1.33)
+// n3: 内側の屈折率 (シャボン玉なら空気=1.0、コーティングガラスなら1.5)
+// d: 膜の厚さ (nm)
+fn fresnel_thin_film(cos_theta1: f32, n1: f32, n2: f32, n3: f32, d: f32, wavelengths: vec4f) -> vec4f {
+    // 1. スネルの法則で各層の角度(cos)を計算
+    let sin_theta1_sq = max(0.0, 1.0 - cos_theta1 * cos_theta1);
+    
+    let sin_theta2_sq = (n1 / n2) * (n1 / n2) * sin_theta1_sq;
+    if sin_theta2_sq >= 1.0 { return vec4f(1.0); } // 全反射
+    let cos_theta2 = sqrt(1.0 - sin_theta2_sq);
+
+    let sin_theta3_sq = (n1 / n3) * (n1 / n3) * sin_theta1_sq;
+    if sin_theta3_sq >= 1.0 { return vec4f(1.0); } // 全反射
+    let cos_theta3 = sqrt(1.0 - sin_theta3_sq);
+
+    // 2. 境界面での振幅反射率 (s偏光・p偏光の平均を取る代わりに簡易的な垂直入射近似に近い形)
+    let r12 = (n1 * cos_theta1 - n2 * cos_theta2) / (n1 * cos_theta1 + n2 * cos_theta2);
+    let r23 = (n2 * cos_theta2 - n3 * cos_theta3) / (n2 * cos_theta2 + n3 * cos_theta3);
+
+    let r12_sq = r12 * r12;
+    let r23_sq = r23 * r23;
+
+    // 3. 位相差 (Phase Difference) を波長(vec4f)ごとに計算！
+    // 経路差による位相ズレ: δ = (4 * π * n2 * d * cos_theta2) / λ
+    let delta = (4.0 * PI * n2 * d * cos_theta2) / wavelengths;
+    let cos_delta = vec4f(cos(delta.x), cos(delta.y), cos(delta.z), cos(delta.w));
+
+    // 4. Airyの公式 (Airy's Formula) による多重干渉を含んだ最終的な反射率 (vec4f)
+    let num = r12_sq + r23_sq + 2.0 * r12 * r23 * cos_delta;
+    let den = 1.0 + r12_sq * r23_sq + 2.0 * r12 * r23 * cos_delta;
+    
+    return clamp(num / den, vec4f(0.0), vec4f(1.0));
+}
+
 fn reflectance(cosine: f32, ref_idx: f32) -> f32 {
     var r0 = (1.0 - ref_idx) / (1.0 + ref_idx);
     r0 = r0 * r0;
@@ -365,7 +403,36 @@ fn sample_bsdf(r_dir: vec3f, ffnormal: vec3f, mat: Material, is_front_face: bool
                 rec.attenuation = mat_spectral_color; // 分散なしの場合はそのまま
             }
         }
-    } else { 
+    } else if mat_type== 4u{
+        // 薄膜干渉 (Thin-Film Interference)
+        let n1 = 1.0; // 外側 (空気)
+        let n2 = mat.extra.z;
+        let n3 = mat.extra.w;
+        let d = max(mat.extra.y, 50.0);
+
+        let unit_dir = normalize(r_dir);
+        let cos_theta1 = min(dot(-unit_dir, ffnormal), 1.0);
+        
+        // 4波長分の干渉反射率を計算！
+        let F_spectral = fresnel_thin_film(cos_theta1, n1, n2, n3, d, wavelengths);
+        
+        // Hero波長(x)の反射率を基準にして、反射か透過をロシアンルーレットで決定
+        let reflect_prob = F_spectral.x;
+
+        if rand() < reflect_prob {
+            // 反射 (干渉による色がつく！)
+            rec.scatter_dir = reflect(unit_dir, ffnormal);
+            // 確率で割ってバイアスを消し、波長ごとの色を掛ける
+            rec.attenuation = F_spectral / reflect_prob; 
+        } else {
+            // 透過 (シャボン玉の膜が薄すぎるため屈折による曲がりは無視して直進させる)
+            // 透過光も干渉の影響を受けるため (1.0 - F) の色になる
+            rec.scatter_dir = unit_dir;
+            let T_spectral = vec4f(1.0) - F_spectral;
+            rec.attenuation = T_spectral / (1.0 - reflect_prob);
+        }
+    }
+    else { 
         rec.scatter_dir = ffnormal + random_unit_vector();
         if length(rec.scatter_dir) < 0.001 {
             rec.scatter_dir = ffnormal;

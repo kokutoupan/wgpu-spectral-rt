@@ -44,7 +44,6 @@ impl Engine {
             }
         });
 
-        // WGPUコンテキストの初期化 (WgpuContext側でArc<Window>を受け取れるように微調整が必要かもしれません)
         let ctx = WgpuContext::new(window.clone()).await;
 
         // シーンとカメラの初期化

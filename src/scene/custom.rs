@@ -28,10 +28,10 @@ pub fn create_custom_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneR
         extra: [2., 0.0, 1.6, 0.12], // Max dispersion for maximum rainbow spread
     });
 
-    // Perfect Metals (roughness = 0.0)
-    let mat_metal_chrome = builder.add_material(MaterialUniform {
-        color: [0.95, 0.95, 0.95, 1.],
-        extra: [1., 0.0, 0., 0.], // perfectly smooth
+    // bubble
+    let mat_bubble = builder.add_material(MaterialUniform {
+        color: [1.0, 1.0, 1.0, 1.],
+        extra: [4., 500.0, 1.33, 1.0], // perfectly smooth
     });
 
     // Geometries
@@ -108,8 +108,8 @@ pub fn create_custom_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneR
     // 4. A Chrome sphere in the distance to catch nice reflections
     builder.add_instance(
         mesh_sphere,
-        mat_metal_chrome,
-        Mat4::from_translation(Vec3::new(1.2, -0.1, -0.5)) * Mat4::from_scale(Vec3::splat(0.6)),
+        mat_bubble,
+        Mat4::from_translation(Vec3::new(1.0, -0.1, -0.5)) * Mat4::from_scale(Vec3::splat(0.6)),
     );
 
     builder.build(device, queue)

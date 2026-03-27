@@ -103,6 +103,34 @@ fn blackbody_radiance(lambda_nm: f32, temp_k: f32) -> f32 {
     return radiance * 1e-13; 
 }
 
+// 薄膜干渉 (Photon用: 単一波長版)
+fn fresnel_thin_film_1d(cos_theta1: f32, n1: f32, n2: f32, n3: f32, d: f32, lambda: f32) -> f32 {
+    let sin_theta1_sq = max(0.0, 1.0 - cos_theta1 * cos_theta1);
+    
+    let sin_theta2_sq = (n1 / n2) * (n1 / n2) * sin_theta1_sq;
+    if sin_theta2_sq >= 1.0 { return 1.0; } 
+    let cos_theta2 = sqrt(1.0 - sin_theta2_sq);
+
+    let sin_theta3_sq = (n1 / n3) * (n1 / n3) * sin_theta1_sq;
+    if sin_theta3_sq >= 1.0 { return 1.0; } 
+    let cos_theta3 = sqrt(1.0 - sin_theta3_sq);
+
+    let r12 = (n1 * cos_theta1 - n2 * cos_theta2) / (n1 * cos_theta1 + n2 * cos_theta2);
+    let r23 = (n2 * cos_theta2 - n3 * cos_theta3) / (n2 * cos_theta2 + n3 * cos_theta3);
+
+    let r12_sq = r12 * r12;
+    let r23_sq = r23 * r23;
+
+    // 位相差
+    let delta = (4.0 * PI * n2 * d * cos_theta2) / lambda;
+    let cos_delta = cos(delta);
+
+    let num = r12_sq + r23_sq + 2.0 * r12 * r23 * cos_delta;
+    let den = 1.0 + r12_sq * r23_sq + 2.0 * r12 * r23 * cos_delta;
+    
+    return clamp(num / den, 0.0, 1.0);
+}
+
 fn get_interpolated_normal(mesh_id: u32, primitive_index: u32, barycentric: vec2f) -> vec3f {
     let mesh_info = mesh_infos[mesh_id];
     let idx_offset = mesh_info.index_offset + primitive_index * 3u;
@@ -259,6 +287,42 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
                 
                 let offset_normal = select(-ffnormal, ffnormal, dot(ray_dir, ffnormal) > 0.0);
                 ray_pos = hit_pos + offset_normal * 0.001;
+            }
+        } else if mat_type == 4u {
+            // ------------------------------------------
+            // Thin-Film Interference (Soap Bubble / Coated Glass)
+            // ------------------------------------------
+            let n1 = 1.0;          // 空気
+            let n2 = mat.extra.z;  // 膜のIOR
+            let n3 = mat.extra.w;  // 内部のIOR (1.0ならシャボン玉、1.5ならガラス)
+            let d  = max(mat.extra.y, 50.0); // 膜の厚さ
+
+            let unit_dir = normalize(ray_dir);
+            let cos_theta = min(dot(-unit_dir, ffnormal), 1.0);
+            
+            // 内部から外に出る時は屈折率の比を逆にする
+            let refraction_ratio = select(n1 / n3, n3 / n1, is_front_face);
+            let sin_theta_t_sq = refraction_ratio * refraction_ratio * (1.0 - cos_theta * cos_theta);
+
+            if sin_theta_t_sq > 1.0 {
+                // 全反射 (Total Internal Reflection)
+                ray_dir = reflect(unit_dir, ffnormal);
+                is_caustic = true;
+            } else {
+                // 薄膜干渉による反射率(F)を計算 (0.0 ~ 1.0)
+                let F = fresnel_thin_film_1d(cos_theta, n1, n2, n3, d, wavelength);
+
+                // ロシアンルーレットで反射か透過を決定
+                if rand() < F {
+                    // 反射: 干渉色を持ったフォトンが跳ね返る
+                    ray_dir = reflect(unit_dir, ffnormal);
+                    is_caustic = true;
+                } else {
+                    // 透過: 膜を抜けてn3(内部)へ屈折して進む
+                    // (シャボン玉のように n1==n3 なら直進になります)
+                    ray_dir = refract(unit_dir, ffnormal, refraction_ratio);
+                    is_caustic = true;
+                }
             }
         } else {
             break; // 光源などに当たったら終了
