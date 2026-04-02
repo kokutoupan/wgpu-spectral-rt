@@ -379,28 +379,42 @@ fn sample_bsdf(r_dir: vec3f, ffnormal: vec3f, mat: Material, is_front_face: bool
         let refraction_ratio = select(ir, 1.0 / ir, is_front_face);
         let unit_dir = normalize(r_dir);
         let cos_theta = min(dot(-unit_dir, ffnormal), 1.0);
-        let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+        let sin_theta_i2 = max(0.0, 1.0 - cos_theta * cos_theta);
+
+        let sin_theta_t2 = refraction_ratio * refraction_ratio * sin_theta_i2;
         
-        if refraction_ratio * sin_theta > 1.0 || reflectance(cos_theta, refraction_ratio) > rand() {
+        if sin_theta_t2 >= 1.0 {
             // 全反射(Total Internal Reflection) または フレネル反射 の場合
             // 反射は波長によって角度が変わらないので、4波長ともそのまま生き残る
             rec.scatter_dir = reflect(unit_dir, ffnormal);
-            rec.attenuation = mat_spectral_color;
+            rec.attenuation = vec4f(1.0);
         } else {
-            // 屈折(Refraction) の場合
-            rec.scatter_dir = refract(unit_dir, ffnormal, refraction_ratio);
-            
-            // 【重要】波長ごとに屈折角が変わるため、1本のレイで追跡できるのは主波長(x)だけ！
-            // 他の波長(y, z, w)のエネルギーをゼロにし、エネルギー保存のために残った x を4倍する
-            if B > 0.0 {
-                let is_collapsed = (throughput.y < 0.0001 && throughput.z < 0.0001 && throughput.w < 0.0001);
-                
-                // 初めての分散なら4倍、すでに分散済みなら1倍
-                let multiplier = select(4.0, 1.0, is_collapsed);
-                
-                rec.attenuation = vec4f(mat_spectral_color.x * multiplier, 0.0, 0.0, 0.0);
+            let cos_theta_t = sqrt(1.0 - sin_theta_t2);
+            let cos_fresnel = select(cos_theta_t, cos_theta, is_front_face);
+
+            if reflectance(cos_fresnel, refraction_ratio) > rand() {
+                // フレネル反射
+                rec.scatter_dir = reflect(unit_dir, ffnormal);
+                rec.attenuation = vec4f(1.0); // 表面反射は色づかない
             } else {
-                rec.attenuation = mat_spectral_color; // 分散なしの場合はそのまま
+                // 屈折 (Refraction)
+                rec.scatter_dir = refract(unit_dir, ffnormal, refraction_ratio);
+                
+                // 【相反性のための立体角補正】放射輝度は (η_i / η_t)^2 倍される
+                let radiance_scale = refraction_ratio * refraction_ratio;
+                
+                // ガラスの透過色はここで乗せる（本来は距離に応じたBeer則が望ましいが、簡易的にはここ）
+                let base_attenuation = mat_spectral_color * radiance_scale;
+
+                if B > 0.0 {
+                    let is_collapsed = (throughput.y < 0.0001 && throughput.z < 0.0001 && throughput.w < 0.0001);
+                    let multiplier = select(4.0, 1.0, is_collapsed);
+                    
+                    // Hero Wavelength (.x) にエネルギーを集約
+                    rec.attenuation = vec4f(base_attenuation.x * multiplier, 0.0, 0.0, 0.0);
+                } else {
+                    rec.attenuation = base_attenuation;
+                }
             }
         }
     } else if mat_type== 4u{

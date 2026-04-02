@@ -22,18 +22,18 @@ pub fn create_cornell_box(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneRe
         color: [0.73, 0.73, 0.73, 1.],
         extra: [0., 0., 0., 0.],
     });
-    // let mat_glass = builder.add_material(MaterialUniform {
-    //     color: [1., 1., 1., 1.],
-    //     extra: [2., 0., 1.5, 0.02],
-    // });
+    let mat_glass = builder.add_material(MaterialUniform {
+        color: [1., 1., 1., 1.],
+        extra: [2., 0., 1.5, 0.01],
+    });
     let mat_bubble = builder.add_material(MaterialUniform {
         color: [1., 1., 1., 1.],
         extra: [4., 500.0, 1.33, 1.0],
     });
-    let mat_metal = builder.add_material(MaterialUniform {
-        color: [0.8, 0.8, 0.8, 1.],
-        extra: [1., 0.0, 0., 0.],
-    });
+    // let mat_metal = builder.add_material(MaterialUniform {
+    //     color: [0.8, 0.8, 0.8, 1.],
+    //     extra: [1., 0.0, 0., 0.],
+    // });
 
     let (plane_v, plane_i) = geometry::create_plane();
     let (cube_v, cube_i) = geometry::create_cube();
@@ -95,7 +95,7 @@ pub fn create_cornell_box(device: &wgpu::Device, queue: &wgpu::Queue) -> SceneRe
 
     builder.add_instance(
         mesh_cube,
-        mat_metal,
+        mat_glass,
         Mat4::from_translation(Vec3::new(-0.35, -0.4 + 0.002, -0.3))
             * Mat4::from_rotation_y(0.4)
             * Mat4::from_scale(Vec3::new(0.6, 1.2, 0.6)),

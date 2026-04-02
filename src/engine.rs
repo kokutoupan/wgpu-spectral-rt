@@ -47,8 +47,8 @@ impl Engine {
         let ctx = WgpuContext::new(window.clone()).await;
 
         // シーンとカメラの初期化
-        // let scene_resources = scene::create_cornell_box(&ctx.device, &ctx.queue);
-        let scene_resources = scene::create_custom_scene(&ctx.device, &ctx.queue);
+        let scene_resources = scene::create_cornell_box(&ctx.device, &ctx.queue);
+        // let scene_resources = scene::create_custom_scene(&ctx.device, &ctx.queue);
         let camera_controller = CameraController::new();
 
         let camera_uniform =
