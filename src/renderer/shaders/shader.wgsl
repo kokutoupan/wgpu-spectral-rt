@@ -169,9 +169,21 @@ fn random_unit_vector() -> vec3f {
 }
 
 fn build_orthonormal_basis(n: vec3f) -> mat3x3f {
-    var up = select(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 0.0, 1.0), abs(n.z) < 0.999);
-    let right = normalize(cross(up, n));
-    up = cross(n, right);
+    let sign = sign(n.z);
+    let a = -1.0 / (sign + n.z);
+    let b = n.x * n.y * a;
+
+    let right = vec3f(
+        1.0 + sign * n.x * n.x * a,
+        sign * b,
+        -sign * n.x
+    );
+    let up = vec3f(
+        b,
+        sign + n.y * n.y * a,
+        -n.y
+    );
+
     return mat3x3f(right, up, n);
 }
 
